@@ -12,5 +12,7 @@ services:
     envVars:
       - key: DATA_DIR
         value: /data
+      - key: PORT
+        value: 10000
       - key: SESSION_SECRET
         generateValue: true
