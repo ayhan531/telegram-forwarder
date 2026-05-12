@@ -87,7 +87,7 @@
       <div class="accounts-grid mt-3">
         {% for acc in accounts %}
         <div class="account-card">
-          <div class="account-avatar">{{ acc.name[0].upper() }}</div>
+          <div class="account-avatar">{{ (acc.name or '?')[0].upper() }}</div>
           <div>
             <div class="account-name">{{ acc.name }}</div>
             <div class="account-phone">{{ acc.phone }}</div>

@@ -188,7 +188,7 @@
   <div class="user-grid">
     {% for u in users %}
     <div class="user-tile" id="tile-{{ u.username }}" onclick="selectUser('{{ u.username }}', '{{ u.display_name }}')">
-      <div class="user-avatar">{{ u.display_name[0].upper() }}</div>
+      <div class="user-avatar">{{ (u.display_name or '?')[0].upper() }}</div>
       <div>
         <div class="user-name">{{ u.display_name }}</div>
         <div class="user-uname">@{{ u.username }}</div>

@@ -504,26 +504,30 @@ async def logout(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
-    if not user:
-        return RedirectResponse(url="/login", status_code=303)
+    try:
+        user = get_current_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=303)
 
-    # user_id=NULL olan sahipsiz hesapları bu kullanıcıya otomatik ata
-    unclaimed = db.query(Account).filter(Account.user_id == None).all()
-    for acc in unclaimed:
-        acc.user_id = user.id
-    if unclaimed:
-        db.commit()
-        print(f"[Dashboard] {len(unclaimed)} sahipsiz hesap {user.username}'e atandı.")
+        # user_id=NULL olan sahipsiz hesapları bu kullanıcıya otomatik ata
+        unclaimed = db.query(Account).filter(Account.user_id == None).all()
+        for acc in unclaimed:
+            acc.user_id = user.id
+        if unclaimed:
+            db.commit()
 
-    accounts = db.query(Account).filter(Account.user_id == user.id).all()
-    account_ids = [a.id for a in accounts]
-    rules = db.query(Rule).filter(Rule.account_id.in_(account_ids)).all() if account_ids else []
-    active_client_ids = set(clients.keys())
-    return templates.TemplateResponse(request=request, name="index.html",
-                                      context={"rules": rules, "accounts": accounts,
-                                               "unclaimed": [], "current_user": user,
-                                               "active_client_ids": active_client_ids})
+        accounts = db.query(Account).filter(Account.user_id == user.id).all()
+        account_ids = [a.id for a in accounts]
+        rules = db.query(Rule).filter(Rule.account_id.in_(account_ids)).all() if account_ids else []
+        active_client_ids = set(clients.keys())
+        
+        return templates.TemplateResponse(request=request, name="index.html",
+                                          context={"rules": rules, "accounts": accounts,
+                                                   "unclaimed": [], "current_user": user,
+                                                   "active_client_ids": active_client_ids})
+    except Exception as e:
+        import traceback
+        return HTMLResponse(content=f"<h1>Hata Oluştu</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
 
 @app.get("/accounts/add", response_class=HTMLResponse)
 @app.get("/accounts/ekle", response_class=HTMLResponse)
