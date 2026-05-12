@@ -500,6 +500,15 @@ async def logout(request: Request):
     request.session.clear()
     return RedirectResponse(url="/login", status_code=303)
 
+@app.get("/health")
+@app.head("/health")
+async def health_check():
+    return {"status": "ok"}
+
+@app.head("/")
+async def root_head():
+    return HTMLResponse(content="", status_code=200)
+
 # ── ANA PANEL ──
 
 @app.get("/", response_class=HTMLResponse)
