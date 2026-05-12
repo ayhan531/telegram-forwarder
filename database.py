@@ -107,13 +107,37 @@ for _sql in _migrations:
 
 # ── Varsayılan kullanıcıları oluştur ──
 _DEFAULT_USERS = [
-    ("cemal",   "cemal123",   "Cemal"),
-    ("furkan",  "furkan123",  "Furkan"),
-    ("tolga",   "tolga123",   "Tolga"),
-    ("comert",  "comert123",  "Cömert"),
+    ("kayhan",  "kayhan123",  "Kayhan"),
+    ("levent",  "levent123",  "Levent"),
+    ("cuneyt",  "cuneyt123",  "Cüneyt"),
 ]
 
 db = SessionLocal()
+
+# Eskileri sil/güncelle (Migration)
+try:
+    # Cemal'i sil
+    db.query(User).filter(User.username == "cemal").delete()
+    
+    # Eskileri yeni isimlere taşı
+    mapping = {
+        "comert": ("cuneyt", "Cüneyt", "cuneyt123"),
+        "tolga":  ("levent", "Levent", "levent123"),
+        "furkan": ("kayhan", "Kayhan", "kayhan123"),
+    }
+    for old_un, (new_un, new_disp, new_pwd) in mapping.items():
+        existing = db.query(User).filter(User.username == old_un).first()
+        if existing:
+            existing.username = new_un
+            existing.display_name = new_disp
+            existing.password_hash = hash_password(new_pwd)
+
+    db.commit()
+except Exception as e:
+    print(f"User migration error: {e}")
+    db.rollback()
+
+# Eksikleri ekle
 for _uname, _pwd, _display in _DEFAULT_USERS:
     if not db.query(User).filter(User.username == _uname).first():
         db.add(User(

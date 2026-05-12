@@ -10,9 +10,19 @@
 </head>
 <body>
 <div class="page">
+  
+  <!-- Mobile Header -->
+  <header class="mobile-header">
+    <div class="sidebar-logo" style="padding:0">Forwarder</div>
+    <button class="menu-toggle" onclick="toggleSidebar()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+  </header>
 
   <!-- ── SIDEBAR ── -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
@@ -191,67 +201,68 @@
         <span class="badge badge-purple">{{ rules|length }}</span>
       </div>
 
-      {% if rules %}
-      <table class="rules-table">
-        <thead>
-          <tr>
-            <th>Hesap</th>
-            <th>Kaynak → Hedef</th>
-            <th>Kişi</th>
-            <th>Not</th>
-            <th>Filtreler</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for rule in rules %}
-          <tr>
-            <td><span class="badge badge-blue">{{ rule.account.name if rule.account else '?' }}</span></td>
-            <td>
-              <div class="route-arrow">
-                <code style="font-size:.78rem;color:#93c5fd">{{ rule.source_chat_id }}</code>
-                <span>→</span>
-                <code style="font-size:.78rem;color:#c4b5fd">{{ rule.destination_id }}</code>
-              </div>
-            </td>
-            <td class="text-sm text-muted">{{ rule.sender_id or 'Herkes' }}</td>
-            <td class="text-sm text-muted">{{ rule.description or '—' }}</td>
-            <td>
-              <!-- Mini filtre formu -->
-              <details>
-                <summary style="cursor:pointer;font-size:.78rem;color:var(--primary)">
-                  {{ rule.filters|length }} filtre
-                </summary>
-                <div style="margin-top:.5rem">
-                  {% for f in rule.filters %}
-                  <div class="flex items-center gap-2 mb-1" style="font-size:.75rem">
-                    <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.search_word }}</code>
-                    <span class="text-muted">→</span>
-                    <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.replace_word or '(sil)' }}</code>
-                    <form action="/filters/{{ f.id }}/delete" method="POST" style="margin-left:auto">
-                      <button type="submit" class="btn-danger" style="padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer">✕</button>
+      <div class="rules-table-wrap">
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th>Hesap</th>
+              <th>Kaynak → Hedef</th>
+              <th>Kişi</th>
+              <th>Not</th>
+              <th>Filtreler</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rule in rules %}
+            <tr>
+              <td><span class="badge badge-blue">{{ rule.account.name if rule.account else '?' }}</span></td>
+              <td>
+                <div class="route-arrow">
+                  <code style="font-size:.78rem;color:#93c5fd">{{ rule.source_chat_id }}</code>
+                  <span>→</span>
+                  <code style="font-size:.78rem;color:#c4b5fd">{{ rule.destination_id }}</code>
+                </div>
+              </td>
+              <td class="text-sm text-muted">{{ rule.sender_id or 'Herkes' }}</td>
+              <td class="text-sm text-muted">{{ rule.description or '—' }}</td>
+              <td>
+                <!-- Mini filtre formu -->
+                <details>
+                  <summary style="cursor:pointer;font-size:.78rem;color:var(--primary)">
+                    {{ rule.filters|length }} filtre
+                  </summary>
+                  <div style="margin-top:.5rem">
+                    {% for f in rule.filters %}
+                    <div class="flex items-center gap-2 mb-1" style="font-size:.75rem">
+                      <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.search_word }}</code>
+                      <span class="text-muted">→</span>
+                      <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.replace_word or '(sil)' }}</code>
+                      <form action="/filters/{{ f.id }}/delete" method="POST" style="margin-left:auto">
+                        <button type="submit" class="btn-danger" style="padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer">✕</button>
+                      </form>
+                    </div>
+                    {% endfor %}
+                    <form action="/rules/{{ rule.id }}/filters" method="POST" class="flex gap-2 mt-2">
+                      <input type="text" name="search_word" placeholder="Bul" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
+                      <input type="text" name="replace_word" placeholder="Değiştir (boş=sil)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
+                      <button type="submit" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
                     </form>
                   </div>
-                  {% endfor %}
-                  <form action="/rules/{{ rule.id }}/filters" method="POST" class="flex gap-2 mt-2">
-                    <input type="text" name="search_word" placeholder="Bul" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
-                    <input type="text" name="replace_word" placeholder="Değiştir (boş=sil)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
-                    <button type="submit" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
-                  </form>
-                </div>
-              </details>
-            </td>
-            <td>
-              <form action="/rules/{{ rule.id }}/delete" method="POST">
-                <button type="submit" class="btn btn-danger" style="padding:.4rem .7rem">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-                </button>
-              </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+                </details>
+              </td>
+              <td>
+                <form action="/rules/{{ rule.id }}/delete" method="POST">
+                  <button type="submit" class="btn btn-danger" style="padding:.4rem .7rem">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       {% else %}
       <div class="empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
@@ -422,6 +433,23 @@ function selectMember(id, name) {
 
 document.getElementById('memberQuery').addEventListener('keydown', e => { if(e.key === 'Enter') doMemberSearch(); });
 document.getElementById('memberModal').addEventListener('click', e => { if(e.target.id === 'memberModal') closeMemberModal(); });
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  if (sb) sb.classList.toggle('mobile-open');
+}
+
+// Close sidebar when clicking outside on mobile
+document.addEventListener('click', (e) => {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.querySelector('.menu-toggle');
+  if (sidebar && window.innerWidth <= 992 && 
+      sidebar.classList.contains('mobile-open') && 
+      !sidebar.contains(e.target) && 
+      (!toggle || !toggle.contains(e.target))) {
+    sidebar.classList.remove('mobile-open');
+  }
+});
 
 </script>
 </body>
