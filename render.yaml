@@ -3,7 +3,7 @@ services:
     name: telegram-forwarder
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn -w 1 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:10000
     healthCheckPath: /health
     plan: starter
     disk:

@@ -493,12 +493,16 @@ async def startup_event():
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, db: Session = Depends(get_db)):
-    if request.session.get("user_id"):
-        return RedirectResponse(url="/", status_code=303)
-    users = db.query(User).all()
-    error = request.session.pop("login_error", None)
-    return templates.TemplateResponse(request=request, name="login.html",
-                                      context={"users": users, "error": error})
+    try:
+        if request.session.get("user_id"):
+            return RedirectResponse(url="/", status_code=303)
+        users = db.query(User).all()
+        error = request.session.pop("login_error", None)
+        return templates.TemplateResponse(request=request, name="login.html",
+                                          context={"users": users, "error": error})
+    except Exception as e:
+        import traceback
+        return HTMLResponse(content=f"<h1>Login Hatası</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
 
 @app.post("/login")
 async def login_post(
