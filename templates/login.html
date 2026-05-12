@@ -183,11 +183,11 @@
     </div>
   </div>
 
-  <div class="section-label">Hesabını seç — şifre gerekmez</div>
+  <div class="section-label">Hesabını seç ve şifreni gir</div>
 
   <div class="user-grid">
     {% for u in users %}
-    <div class="user-tile" id="tile-{{ u.username }}" onclick="loginAs('{{ u.username }}', '{{ u.display_name }}')">
+    <div class="user-tile" id="tile-{{ u.username }}" onclick="selectUser('{{ u.username }}', '{{ u.display_name }}')">
       <div class="user-avatar">{{ u.display_name[0].upper() }}</div>
       <div>
         <div class="user-name">{{ u.display_name }}</div>
@@ -198,31 +198,45 @@
     {% endfor %}
   </div>
 
+  <div id="passSection" style="display:none; animation: fadeUp .3s ease both;">
+    <div class="section-label" id="selectedUserLabel">Şifre Gir</div>
+    <form method="POST" action="/login" id="loginForm" style="display:block">
+      <input type="hidden" name="username" id="usernameField">
+      <div class="field" style="margin-bottom:1rem">
+        <input type="password" name="password" id="passwordField" 
+               placeholder="••••••••" required
+               style="width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:.9rem 1rem; color:white; outline:none; font-size:1rem; border-color:var(--primary)">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" style="padding:1rem; border-radius:12px; font-size:1rem">
+        Giriş Yap
+      </button>
+    </form>
+  </div>
+
   {% if error %}
-  <div class="error-msg">
+  <div class="error-msg" style="margin-top:1.5rem">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
     </svg>
     {{ error }}
   </div>
   {% endif %}
-
-  <form method="POST" action="/login" id="loginForm">
-    <input type="hidden" name="username" id="usernameField">
-  </form>
-
-  <div class="footer-note">👆 İsmine tıkla — direkt giriş yaparsın</div>
 </div>
 
 <script>
-function loginAs(username, display) {
+function selectUser(username, display) {
+  // Clear other selections
+  document.querySelectorAll('.user-tile').forEach(t => t.style.borderColor = 'var(--border)');
+  document.querySelectorAll('.user-tile').forEach(t => t.style.background = 'var(--surface2)');
+  
   const tile = document.getElementById('tile-' + username);
-  if (tile) {
-    tile.classList.add('loading');
-    document.getElementById('arrow-' + username).innerHTML = '<span class="spin-icon"></span>';
-  }
+  tile.style.borderColor = 'var(--primary)';
+  tile.style.background = 'rgba(99,102,241,.15)';
+
   document.getElementById('usernameField').value = username;
-  setTimeout(() => document.getElementById('loginForm').submit(), 250);
+  document.getElementById('selectedUserLabel').innerText = display + " için şifre girin";
+  document.getElementById('passSection').style.display = 'block';
+  document.getElementById('passwordField').focus();
 }
 </script>
 </body>

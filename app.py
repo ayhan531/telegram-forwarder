@@ -484,12 +484,14 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
 async def login_post(
     request: Request,
     username: str = Form(...),
+    password: str = Form(...),
     db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.username == username).first()
-    if not user:
-        request.session["login_error"] = "Kullanıcı bulunamadı."
+    if not user or user.password_hash != hash_password(password):
+        request.session["login_error"] = "Hatalı şifre veya kullanıcı."
         return RedirectResponse(url="/login", status_code=303)
+    
     request.session["user_id"] = user.id
     return RedirectResponse(url="/", status_code=303)
 

@@ -107,9 +107,9 @@ for _sql in _migrations:
 
 # ── Varsayılan kullanıcıları oluştur ──
 _DEFAULT_USERS = [
-    ("kayhan",  "kayhan123",  "Kayhan"),
-    ("levent",  "levent123",  "Levent"),
-    ("cuneyt",  "cuneyt123",  "Cüneyt"),
+    ("kayhan",  "ky_5510_*",  "Kayhan"),
+    ("levent",  "lv_4432_?",  "Levent"),
+    ("cuneyt",  "cn_9821_!",  "Cüneyt"),
 ]
 
 db = SessionLocal()
@@ -119,11 +119,14 @@ try:
     # Cemal'i sil
     db.query(User).filter(User.username == "cemal").delete()
     
-    # Eskileri yeni isimlere taşı
+    # Şifreleri ve isimleri güncelle
     mapping = {
-        "comert": ("cuneyt", "Cüneyt", "cuneyt123"),
-        "tolga":  ("levent", "Levent", "levent123"),
-        "furkan": ("kayhan", "Kayhan", "kayhan123"),
+        "cuneyt": ("cuneyt", "Cüneyt", "cn_9821_!"),
+        "levent": ("levent", "Levent", "lv_4432_?"),
+        "kayhan": ("kayhan", "Kayhan", "ky_5510_*"),
+        "comert": ("cuneyt", "Cüneyt", "cn_9821_!"),
+        "tolga":  ("levent", "Levent", "lv_4432_?"),
+        "furkan": ("kayhan", "Kayhan", "ky_5510_*"),
     }
     for old_un, (new_un, new_disp, new_pwd) in mapping.items():
         existing = db.query(User).filter(User.username == old_un).first()
