@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telegram Forwarder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="page">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
+      </svg>
+      Forwarder
+    </div>
+
+    <span class="nav-section">Menü</span>
+
+    <a class="nav-item active" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Panel
+    </a>
+    <a class="nav-item" href="/accounts/ekle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Hesap Ekle
+    </a>
+    <a class="nav-item" href="/rules/toplu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+      Toplu Kural
+    </a>
+    <a class="nav-item" href="/accounts/bulk">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      Toplu Yükle
+    </a>
+
+    <div class="sidebar-footer">
+      <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.5rem">Giriş yapan:</div>
+      <div style="font-weight:700;font-size:.9rem;margin-bottom:.75rem">{{ current_user.display_name }}</div>
+      <div class="status-pill">
+        <div class="pulse"></div>
+        Sistem Aktif
+      </div>
+      <a href="/logout" style="display:block;margin-top:.75rem;text-align:center;font-size:.78rem;color:#f87171;text-decoration:none;padding:.4rem;border-radius:6px;border:1px solid rgba(248,113,113,.3);transition:background .2s" onmouseover="this.style.background='rgba(248,113,113,.1)'" onmouseout="this.style.background=''">🚪 Çıkış Yap</a>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- Header -->
+    <div class="main-header">
+      <h1>📡 Telegram Forwarder</h1>
+      <p>Mesajları otomatik olarak gruplar arasında ilet</p>
+    </div>
+
+    <!-- ── HESAPLAR ── -->
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <div class="card-title" style="margin-bottom:0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Bağlı Hesaplar
+          <span class="badge badge-blue">{{ accounts|length }}</span>
+        </div>
+        <a href="/accounts/ekle" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Hesap Ekle
+        </a>
+      </div>
+
+      {% if accounts %}
+      <div class="accounts-grid mt-3">
+        {% for acc in accounts %}
+        <div class="account-card">
+          <div class="account-avatar">{{ acc.name[0].upper() }}</div>
+          <div>
+            <div class="account-name">{{ acc.name }}</div>
+            <div class="account-phone">{{ acc.phone }}</div>
+            {% if acc.id in active_client_ids %}
+              <span style="font-size:.7rem;color:#4ade80;font-weight:600">● Bağlı</span>
+            {% else %}
+              <span style="font-size:.7rem;color:#f87171;font-weight:600" title="Oturumu süresi dolmuş, hesabı silin ve yeniden ekleyin">⚠ Oturum süresi dolmuş</span>
+            {% endif %}
+          </div>
+          <form action="/accounts/{{ acc.id }}/delete" method="POST" style="margin-left:auto">
+            <button class="account-del" type="submit" title="Sil">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+            </button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <p>Henüz hesap yok.<br><a href="/accounts/ekle" style="color:var(--primary)">Hesap eklemek için tıkla →</a></p>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── YENİ KURAL EKLE ── -->
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+        Yeni Yönlendirme Kuralı
+      </div>
+
+      <div class="alert alert-info">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>Grup ID bilmiyorsan → sağdaki <b>🔍 Bul</b> butonuna bas, linki yapıştır, ID otomatik gelir.</span>
+      </div>
+
+      <form action="/rules" method="POST">
+        <div class="rule-form-grid">
+
+          <!-- Hesap Seç -->
+          <div class="field rule-form-full">
+            <label>Hangi hesap iletecek?</label>
+            <select name="account_id" id="account_id" required>
+              {% for acc in accounts %}
+              <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+              {% endfor %}
+            </select>
+            {% if not accounts %}
+            <div class="field-hint" style="color:var(--warn)">⚠️ Önce bir hesap eklemelisin.</div>
+            {% endif %}
+          </div>
+
+          <!-- Kaynak Grup -->
+          <div class="field">
+            <label>📥 Kaynak Grup <span class="text-muted">(nereden okusun)</span></label>
+            <div class="input-with-action">
+              <input type="text" name="source_chat_id" id="source_chat_id"
+                     placeholder="-100... veya t.me/+link" required>
+              <button type="button" class="btn-find" onclick="openFinder('source_chat_id')">
+                🔍 Bul
+              </button>
+            </div>
+          </div>
+
+          <!-- Hedef Grup -->
+          <div class="field">
+            <label>📤 Hedef Grup <span class="text-muted">(nereye iletsin)</span></label>
+            <div class="input-with-action">
+              <input type="text" name="destination_id" id="destination_id"
+                     placeholder="-100... veya t.me/+link" required>
+              <button type="button" class="btn-find" onclick="openFinder('destination_id')">
+                🔍 Bul
+              </button>
+            </div>
+          </div>
+
+          <!-- Sadece bu kişi -->
+          <div class="field">
+            <label>👤 Sadece bu kişiden ilet <span class="text-muted">(boş = herkes)</span></label>
+            <div class="input-with-action">
+              <input type="text" name="sender_id" id="sender_id" placeholder="Kişi ID (opsiyonel)">
+              <button type="button" class="btn-find" onclick="openMemberSearch()">
+                🔍 Üye Ara
+              </button>
+            </div>
+          </div>
+
+          <!-- Açıklama -->
+          <div class="field">
+            <label>📝 Not <span class="text-muted">(hatırlatma için)</span></label>
+            <input type="text" name="description" placeholder="Örn: VIP grup yönlendirme">
+          </div>
+
+          <div class="rule-form-full" style="margin-top:.5rem">
+            <button type="submit" class="btn btn-primary btn-lg btn-block">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+              Kuralı Ekle
+            </button>
+          </div>
+
+        </div>
+      </form>
+    </div>
+
+    <!-- ── AKTİF KURALLAR ── -->
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        Aktif Kurallar
+        <span class="badge badge-purple">{{ rules|length }}</span>
+      </div>
+
+      {% if rules %}
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>Hesap</th>
+            <th>Kaynak → Hedef</th>
+            <th>Kişi</th>
+            <th>Not</th>
+            <th>Filtreler</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+          <tr>
+            <td><span class="badge badge-blue">{{ rule.account.name if rule.account else '?' }}</span></td>
+            <td>
+              <div class="route-arrow">
+                <code style="font-size:.78rem;color:#93c5fd">{{ rule.source_chat_id }}</code>
+                <span>→</span>
+                <code style="font-size:.78rem;color:#c4b5fd">{{ rule.destination_id }}</code>
+              </div>
+            </td>
+            <td class="text-sm text-muted">{{ rule.sender_id or 'Herkes' }}</td>
+            <td class="text-sm text-muted">{{ rule.description or '—' }}</td>
+            <td>
+              <!-- Mini filtre formu -->
+              <details>
+                <summary style="cursor:pointer;font-size:.78rem;color:var(--primary)">
+                  {{ rule.filters|length }} filtre
+                </summary>
+                <div style="margin-top:.5rem">
+                  {% for f in rule.filters %}
+                  <div class="flex items-center gap-2 mb-1" style="font-size:.75rem">
+                    <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.search_word }}</code>
+                    <span class="text-muted">→</span>
+                    <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.replace_word or '(sil)' }}</code>
+                    <form action="/filters/{{ f.id }}/delete" method="POST" style="margin-left:auto">
+                      <button type="submit" class="btn-danger" style="padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer">✕</button>
+                    </form>
+                  </div>
+                  {% endfor %}
+                  <form action="/rules/{{ rule.id }}/filters" method="POST" class="flex gap-2 mt-2">
+                    <input type="text" name="search_word" placeholder="Bul" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
+                    <input type="text" name="replace_word" placeholder="Değiştir (boş=sil)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
+                    <button type="submit" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
+                  </form>
+                </div>
+              </details>
+            </td>
+            <td>
+              <form action="/rules/{{ rule.id }}/delete" method="POST">
+                <button type="submit" class="btn btn-danger" style="padding:.4rem .7rem">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+        <p>Henüz kural yok. Yukarıdan ekle.</p>
+      </div>
+      {% endif %}
+    </div>
+
+  </main>
+</div>
+
+<!-- ── GRUP ID BULUCU MODAL ── -->
+<div class="modal-overlay" id="finderModal">
+  <div class="modal">
+    <div class="modal-title">🔍 Grup ID Bul</div>
+    <div class="modal-sub">Davet linki, @username veya t.me/... linki yapıştır → ID otomatik gelir</div>
+
+    <div class="field">
+      <input class="w-full" id="finderInput" type="text"
+             placeholder="https://t.me/+AbCdEfGh  veya  @grupadi"
+             style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem 1rem;color:var(--text);outline:none;font-size:.9rem;width:100%">
+    </div>
+
+    <div class="modal-result" id="finderResult">
+      <div class="big-id" id="resultId"></div>
+      <div class="small-name" id="resultName"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
+      <button class="btn btn-primary" id="btnSearch" onclick="doSearch()">🔎 Ara</button>
+      <button class="btn btn-success" id="btnUse" style="display:none" onclick="useResult()">✅ Kullan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── ÜYE ARAMA MODAL ── -->
+<div class="modal-overlay" id="memberModal">
+  <div class="modal">
+    <div class="modal-title">👤 Üye Ara</div>
+    <div class="modal-sub">Gruptaki kişiyi isim veya @username ile ara → seç → ID otomatik girer</div>
+
+    <div class="field" style="margin-bottom:.5rem">
+      <input class="w-full" id="memberQuery" type="text"
+             placeholder="Ahmet veya @ahmetyilmaz"
+             style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem 1rem;color:var(--text);outline:none;font-size:.9rem;width:100%">
+    </div>
+
+    <div id="memberResults" style="display:none;max-height:280px;overflow-y:auto;margin-top:.5rem"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeMemberModal()">İptal</button>
+      <button class="btn btn-primary" id="btnMemberSearch" onclick="doMemberSearch()">🔎 Ara</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _targetField = null, _foundId = null;
+
+function openFinder(fieldId) {
+  _targetField = fieldId; _foundId = null;
+  document.getElementById('finderInput').value = '';
+  const r = document.getElementById('finderResult');
+  r.className = 'modal-result'; r.style.display = 'none';
+  document.getElementById('btnUse').style.display = 'none';
+  document.getElementById('finderModal').classList.add('open');
+  setTimeout(() => document.getElementById('finderInput').focus(), 80);
+}
+function closeModal() { document.getElementById('finderModal').classList.remove('open'); }
+
+async function doSearch() {
+  const link = document.getElementById('finderInput').value.trim();
+  if (!link) return;
+  const accId = document.getElementById('account_id').value;
+  const btn = document.getElementById('btnSearch');
+  btn.innerHTML = '<span class="spin"></span> Aranıyor...'; btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('link', link); fd.append('account_id', accId);
+
+  try {
+    const res = await fetch('/resolve-link', { method: 'POST', body: fd });
+    const d = await res.json();
+    const box = document.getElementById('finderResult');
+    box.style.display = 'block';
+    if (d.error) {
+      box.className = 'modal-result err';
+      document.getElementById('resultId').textContent = '❌ ' + d.error;
+      document.getElementById('resultName').textContent = '';
+      document.getElementById('btnUse').style.display = 'none';
+    } else {
+      box.className = 'modal-result ok';
+      _foundId = d.id;
+      document.getElementById('resultId').textContent = d.id;
+      document.getElementById('resultName').textContent = d.title + ' · ' + d.type;
+      document.getElementById('btnUse').style.display = '';
+    }
+  } catch(e) { alert('Sunucu hatası: ' + e); }
+  finally { btn.innerHTML = '🔎 Ara'; btn.disabled = false; }
+}
+
+function useResult() {
+  if (_foundId && _targetField) document.getElementById(_targetField).value = _foundId;
+  closeModal();
+}
+
+document.getElementById('finderInput').addEventListener('keydown', e => { if(e.key === 'Enter') doSearch(); });
+document.getElementById('finderModal').addEventListener('click', e => { if(e.target.id === 'finderModal') closeModal(); });
+
+// ── ÜYE ARAMA ──
+function openMemberSearch() {
+  document.getElementById('memberQuery').value = '';
+  document.getElementById('memberResults').style.display = 'none';
+  document.getElementById('memberResults').innerHTML = '';
+  document.getElementById('memberModal').classList.add('open');
+  setTimeout(() => document.getElementById('memberQuery').focus(), 80);
+}
+function closeMemberModal() { document.getElementById('memberModal').classList.remove('open'); }
+
+async function doMemberSearch() {
+  const query   = document.getElementById('memberQuery').value.trim();
+  const accId   = document.getElementById('account_id').value;
+  const chatId  = document.getElementById('source_chat_id').value.trim();
+  if (!query) return;
+  if (!chatId) { alert('Önce Kaynak Grup ID\'sini gir!'); return; }
+
+  const btn = document.getElementById('btnMemberSearch');
+  btn.innerHTML = '<span class="spin"></span> Aranıyor...'; btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('query', query); fd.append('account_id', accId); fd.append('chat_id', chatId);
+
+  try {
+    const res = await fetch('/search-member', { method: 'POST', body: fd });
+    const d   = await res.json();
+    const box = document.getElementById('memberResults');
+    box.style.display = 'block';
+
+    if (d.error) {
+      box.innerHTML = `<div style="color:#f87171;padding:.75rem;text-align:center">❌ ${d.error}</div>`;
+    } else {
+      box.innerHTML = d.results.map(r => `
+        <div onclick="selectMember('${r.id}', '${r.name}')"
+             style="padding:.65rem 1rem;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:.75rem;border-bottom:1px solid var(--border);transition:background .15s"
+             onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-g);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.95rem;flex-shrink:0">
+            ${r.name[0].toUpperCase()}
+          </div>
+          <div>
+            <div style="font-weight:600;font-size:.9rem">${r.name}</div>
+            <div style="font-size:.75rem;color:var(--text-muted)">
+              ${r.username ? '@' + r.username + ' · ' : ''}ID: ${r.id}
+            </div>
+          </div>
+          <div style="margin-left:auto;font-size:.75rem;color:var(--primary)">Seç →</div>
+        </div>
+      `).join('');
+    }
+  } catch(e) { alert('Sunucu hatası: ' + e); }
+  finally { btn.innerHTML = '🔎 Ara'; btn.disabled = false; }
+}
+
+function selectMember(id, name) {
+  document.getElementById('sender_id').value = id;
+  closeMemberModal();
+}
+
+document.getElementById('memberQuery').addEventListener('keydown', e => { if(e.key === 'Enter') doMemberSearch(); });
+document.getElementById('memberModal').addEventListener('click', e => { if(e.target.id === 'memberModal') closeMemberModal(); });
+
+</script>
+</body>
+</html>

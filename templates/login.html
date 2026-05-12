@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Giriş — Telegram Forwarder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0f;
+      --surface:   #12121a;
+      --surface2:  #1a1a26;
+      --border:    #2a2a3a;
+      --primary:   #6366f1;
+      --primary-g: linear-gradient(135deg, #6366f1, #8b5cf6);
+      --text:      #f1f5f9;
+      --muted:     #64748b;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 20%, rgba(99,102,241,.15) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139,92,246,.12) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .login-card {
+      position: relative;
+      width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2.5rem 2.5rem 2rem;
+      box-shadow: 0 25px 60px rgba(0,0,0,.5);
+      animation: fadeUp .4s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(20px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin-bottom: 2rem;
+    }
+    .logo-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: var(--primary-g);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-icon svg { width:22px; height:22px; stroke: white; }
+    .logo-text { font-size: 1.25rem; font-weight: 700; }
+    .logo-sub  { font-size: .75rem; color: var(--muted); }
+
+    .section-label {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: .75rem;
+    }
+
+    .user-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .6rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .user-tile {
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: .9rem .75rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      transition: border-color .2s, background .2s, transform .15s;
+      user-select: none;
+      position: relative;
+      overflow: hidden;
+    }
+    .user-tile:hover {
+      border-color: var(--primary);
+      background: rgba(99,102,241,.08);
+      transform: translateY(-1px);
+    }
+    .user-tile.loading {
+      border-color: var(--primary);
+      background: rgba(99,102,241,.15);
+      pointer-events: none;
+    }
+    .user-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--primary-g);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: .95rem; flex-shrink: 0;
+    }
+    .user-name  { font-size: .9rem; font-weight: 600; }
+    .user-uname { font-size: .72rem; color: var(--muted); }
+
+    .arrow-icon { margin-left: auto; opacity: 0; font-size: .85rem; transition: opacity .2s; }
+    .user-tile:hover .arrow-icon { opacity: 1; }
+    .user-tile.loading .arrow-icon { opacity: 1; }
+
+    .error-msg {
+      background: rgba(239,68,68,.1);
+      border: 1px solid rgba(239,68,68,.3);
+      border-radius: 10px;
+      padding: .7rem 1rem;
+      color: #fca5a5;
+      font-size: .85rem;
+      margin-bottom: 1rem;
+      display: flex; align-items: center; gap: .5rem;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: .75rem;
+      color: var(--muted);
+    }
+
+    /* Hidden form */
+    #loginForm { display: none; }
+
+    /* Spinner for tile */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin-icon {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(99,102,241,.3);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5">
+        <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-text">Telegram Forwarder</div>
+      <div class="logo-sub">Kim giriş yapıyor?</div>
+    </div>
+  </div>
+
+  <div class="section-label">Hesabını seç — şifre gerekmez</div>
+
+  <div class="user-grid">
+    {% for u in users %}
+    <div class="user-tile" id="tile-{{ u.username }}" onclick="loginAs('{{ u.username }}', '{{ u.display_name }}')">
+      <div class="user-avatar">{{ u.display_name[0].upper() }}</div>
+      <div>
+        <div class="user-name">{{ u.display_name }}</div>
+        <div class="user-uname">@{{ u.username }}</div>
+      </div>
+      <div class="arrow-icon" id="arrow-{{ u.username }}">→</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if error %}
+  <div class="error-msg">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <form method="POST" action="/login" id="loginForm">
+    <input type="hidden" name="username" id="usernameField">
+  </form>
+
+  <div class="footer-note">👆 İsmine tıkla — direkt giriş yaparsın</div>
+</div>
+
+<script>
+function loginAs(username, display) {
+  const tile = document.getElementById('tile-' + username);
+  if (tile) {
+    tile.classList.add('loading');
+    document.getElementById('arrow-' + username).innerHTML = '<span class="spin-icon"></span>';
+  }
+  document.getElementById('usernameField').value = username;
+  setTimeout(() => document.getElementById('loginForm').submit(), 250);
+}
+</script>
+</body>
+</html>

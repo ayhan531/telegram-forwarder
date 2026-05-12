@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hesap Ekle — Telegram Forwarder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="page">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>
+      </svg>
+      Forwarder
+    </div>
+    <span class="nav-section">Menü</span>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Panel
+    </a>
+    <a class="nav-item active" href="/accounts/ekle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Hesap Ekle
+    </a>
+    <a class="nav-item" href="/accounts/bulk">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      Toplu Yükle
+    </a>
+    <div class="sidebar-footer">
+      <div class="status-pill"><div class="pulse"></div>Sistem Aktif</div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+    <div class="main-header">
+      <h1>➕ Hesap Ekle</h1>
+      <p>Telefondaki hesabını bağlamak için en kolay yöntemi seç</p>
+    </div>
+
+    <!-- Yöntem Seçimi -->
+    <div class="method-tabs">
+      <div class="method-tab selected" onclick="selectMethod('qr', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <rect x="14" y="14" width="3" height="3"/><rect x="18" y="14" width="3" height="3"/>
+          <rect x="14" y="18" width="3" height="3"/><rect x="18" y="18" width="3" height="3"/>
+        </svg>
+        <h3>QR Kod ile Giriş</h3>
+        <p>📱 Telefonu tut, QR tara → 5 saniye</p>
+      </div>
+      <div class="method-tab" onclick="selectMethod('phone', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81 19.79 19.79 0 01.08 2.18 2 2 0 012.07.03h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.13 6.13l.75-.75a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7a2 2 0 011.72 2z"/>
+        </svg>
+        <h3>Telefon ile Giriş</h3>
+        <p>📲 Numara + SMS kodu</p>
+      </div>
+      <div class="method-tab" onclick="selectMethod('session', this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <h3>Session Dosyası</h3>
+        <p>🗂️ .session dosyaları varsa</p>
+      </div>
+    </div>
+
+    <!-- ══ QR BÖLÜMÜ ══ -->
+    <div id="section-qr" class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        QR Kod ile Hızlı Giriş
+      </div>
+
+      <div class="alert alert-info">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span><b>Telegram X, Normal Telegram, herhangi bir hesap</b> — şifre veya SMS kodu gerekmez. Sadece QR tara.</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+
+        <!-- Sol: Form -->
+        <div>
+          <div class="field">
+            <label>Hesap Adı (hatırlatma için)</label>
+            <input type="text" id="qr-name" placeholder="Örn: Ahmet, Bot1, Ana Hesap">
+          </div>
+          <div class="field">
+            <label>API ID <span class="text-muted">— <a href="https://my.telegram.org/auth" target="_blank" style="color:var(--primary)">my.telegram.org'dan al</a></span></label>
+            <input type="text" id="qr-api-id" placeholder="12345678">
+          </div>
+          <div class="field">
+            <label>API Hash</label>
+            <input type="text" id="qr-api-hash" placeholder="abc123def456...">
+          </div>
+          <button class="btn btn-primary btn-lg btn-block" onclick="startQR()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+            QR Kodu Oluştur
+          </button>
+        </div>
+
+        <!-- Sağ: QR Alanı -->
+        <div id="qr-area" style="display:none">
+          <div class="qr-section">
+            <div class="qr-wrap">
+              <img id="qr-img" src="" alt="QR Kod">
+            </div>
+            <div id="qr-status" class="mt-3 text-sm text-muted">Telefonu aç ve QR'ı tara...</div>
+          </div>
+
+          <div class="qr-steps">
+            <div class="qr-step">
+              <div class="qr-step-num">1</div>
+              <div>Telefonunuzda <b>Telegram</b>'ı açın</div>
+            </div>
+            <div class="qr-step">
+              <div class="qr-step-num">2</div>
+              <div><b>Ayarlar → Cihazlar → QR ile Giriş</b>'e git (veya başka hesap ekle)</div>
+            </div>
+            <div class="qr-step">
+              <div class="qr-step-num">3</div>
+              <div>Yukarıdaki QR kodu tara — hesap otomatik eklenir ✅</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ TELEFON BÖLÜMÜ ══ -->
+    <div id="section-phone" class="card" style="display:none">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.81 19.79 19.79 0 01.08 2.18 2 2 0 012.07.03h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.13 6.13l.75-.75a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7a2 2 0 011.72 2z"/></svg>
+        Telefon Numarası ile Giriş
+      </div>
+      <form action="/accounts/send_code" method="POST" style="max-width:480px">
+        <div class="field">
+          <label>Hesap Adı</label>
+          <input type="text" name="name" placeholder="Örn: Ahmet" required>
+        </div>
+        <div class="field">
+          <label>Telefon Numarası</label>
+          <input type="text" name="phone" placeholder="+90500..." required>
+        </div>
+        <div class="field">
+          <label>API ID — <a href="https://my.telegram.org/auth" target="_blank" style="color:var(--primary)">nereden alırım?</a></label>
+          <input type="text" name="api_id" required>
+        </div>
+        <div class="field">
+          <label>API Hash</label>
+          <input type="text" name="api_hash" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block mt-2">
+          Doğrulama Kodu Gönder →
+        </button>
+      </form>
+    </div>
+
+    <!-- ══ SESSION BÖLÜMÜ ══ -->
+    <div id="section-session" class="card" style="display:none">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Toplu .session Dosyası Yükleme
+      </div>
+      <div class="alert alert-warn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>Bilgisayarda .session dosyaları olan bir klasörün yolunu gir. Tümü otomatik yüklenir.</span>
+      </div>
+      <form action="/accounts/bulk_load" method="POST" style="max-width:480px">
+        <div class="field">
+          <label>Klasör Yolu (.session dosyaları olan)</label>
+          <input type="text" name="folder_path" placeholder="/Users/adın/Desktop/sessionlar" required>
+          <div class="field-hint">Örn: /Users/shift/Desktop/sessions</div>
+        </div>
+        <div class="field">
+          <label>API ID</label>
+          <input type="text" name="api_id" required>
+        </div>
+        <div class="field">
+          <label>API Hash</label>
+          <input type="text" name="api_hash" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg btn-block mt-2">
+          📂 Tümünü Yükle
+        </button>
+      </form>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* ── Method tabs ── */
+function selectMethod(id, el) {
+  document.querySelectorAll('.method-tab').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
+  ['qr','phone','session'].forEach(s => {
+    document.getElementById('section-' + s).style.display = s === id ? '' : 'none';
+  });
+}
+
+/* ── QR Login ── */
+let _qrToken = null, _qrPoll = null, _qrAccountId = null;
+
+async function startQR() {
+  const name    = document.getElementById('qr-name').value.trim();
+  const api_id  = document.getElementById('qr-api-id').value.trim();
+  const api_hash= document.getElementById('qr-api-hash').value.trim();
+  if (!name || !api_id || !api_hash) { alert('Tüm alanları doldur!'); return; }
+
+  const fd = new FormData();
+  fd.append('name', name); fd.append('api_id', api_id); fd.append('api_hash', api_hash);
+
+  const r = await fetch('/accounts/qr-start', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+
+  _qrAccountId = d.account_id;
+  document.getElementById('qr-img').src = 'data:image/png;base64,' + d.qr_b64;
+  document.getElementById('qr-area').style.display = 'block';
+  document.getElementById('qr-status').textContent = '⏳ Telefonu aç ve QR\'ı tara...';
+
+  clearInterval(_qrPoll);
+  _qrPoll = setInterval(pollQR, 2500);
+}
+
+async function pollQR() {
+  try {
+    const r = await fetch('/accounts/qr-status?account_id=' + _qrAccountId);
+    const d = await r.json();
+    if (d.status === 'ok') {
+      clearInterval(_qrPoll);
+      document.getElementById('qr-status').innerHTML = '✅ <b>Başarıyla giriş yapıldı!</b> Yönlendiriliyor...';
+      document.getElementById('qr-status').style.color = 'var(--success)';
+      setTimeout(() => window.location.href = '/', 1500);
+    } else if (d.status === 'expired') {
+      clearInterval(_qrPoll);
+      document.getElementById('qr-status').textContent = '⚠️ QR süresi doldu. Tekrar oluştur.';
+      document.getElementById('qr-status').style.color = 'var(--warn)';
+    } else if (d.qr_b64) {
+      // QR yenilendi
+      document.getElementById('qr-img').src = 'data:image/png;base64,' + d.qr_b64;
+    }
+  } catch(e) {}
+}
+</script>
+</body>
+</html>

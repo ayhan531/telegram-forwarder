@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kurulum - Telegram Forwarder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .setup-card {
+            max-width: 500px;
+            margin: 100px auto;
+        }
+        .step {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 1rem;
+            border: 1px solid var(--border);
+        }
+        .step-num {
+            background: var(--primary);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .setup-input {
+            width: 100%;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card setup-card">
+            <h1 style="margin-bottom: 0.5rem; text-align: center;">Hoş Geldin!</h1>
+            <p style="color: var(--text-muted); text-align: center; margin-bottom: 2rem;">Uygulamayı kullanmaya başlamak için son bir adım kaldı.</p>
+
+            <div class="step">
+                <div class="step-num">1</div>
+                <div>
+                    <p style="font-weight: 600;">API Bilgilerini Al</p>
+                    <p style="font-size: 0.875rem; color: var(--text-muted);">
+                        <a href="https://my.telegram.org/auth" target="_blank" style="color: var(--primary);">Buraya tıkla</a>, giriş yap ve bir uygulama oluşturup ID/Hash çiftini al.
+                    </p>
+                </div>
+            </div>
+
+            <form action="/setup" method="POST">
+                <div class="input-group setup-input">
+                    <label for="api_id">App api_id</label>
+                    <input type="text" id="api_id" name="api_id" value="{{ api_id }}" placeholder="Örn: 1234567" required>
+                </div>
+                <div class="input-group setup-input">
+                    <label for="api_hash">App api_hash</label>
+                    <input type="text" id="api_hash" name="api_hash" value="{{ api_hash }}" placeholder="Örn: abc123def456..." required>
+                </div>
+                <div class="input-group setup-input">
+                    <label for="phone">Telefon Numaran</label>
+                    <input type="text" id="phone" name="phone" placeholder="+90500..." required>
+                </div>
+                <button type="submit" style="width: 100%; margin-top: 1rem; padding: 1rem;">Kurulumu Tamamla</button>
+            </form>
+        </div>
+    </div>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: telegram-forwarder
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    plan: starter
+    disk:
+      name: tg-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: SESSION_SECRET
+        generateValue: true

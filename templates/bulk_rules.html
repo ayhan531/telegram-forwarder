@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toplu Kural Ekle — Telegram Forwarder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .bulk-table { width: 100%; border-collapse: collapse; }
+    .bulk-table th {
+      text-align: left; font-size: .72rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: .06em;
+      padding: 0 .6rem .6rem;
+    }
+    .bulk-table td { padding: .4rem .4rem; vertical-align: middle; }
+    .bulk-table .row-num {
+      width: 28px; text-align: center;
+      font-size: .75rem; color: var(--muted); font-weight: 600;
+    }
+    .row-input {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: .55rem .8rem;
+      color: var(--text); font-size: .85rem; outline: none; width: 100%;
+      transition: border-color .15s;
+    }
+    .row-input:focus { border-color: var(--primary); }
+    .row-select {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: .55rem .8rem;
+      color: var(--text); font-size: .85rem; outline: none; width: 100%;
+      appearance: none; cursor: pointer;
+    }
+    .btn-del-row {
+      background: none; border: none; cursor: pointer; color: var(--muted);
+      padding: .35rem; border-radius: 6px; display: flex;
+      align-items: center; justify-content: center; transition: color .15s, background .15s;
+    }
+    .btn-del-row:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+    .sticky-bar {
+      position: sticky; bottom: 0;
+      background: linear-gradient(to top, var(--bg) 70%, transparent);
+      padding: 1.5rem 0 1rem;
+      margin-top: 1.5rem;
+      display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;
+    }
+    .result-banner {
+      display: none; padding: .9rem 1.2rem; border-radius: var(--radius-sm);
+      font-size: .875rem; font-weight: 600; margin-top: 1rem;
+    }
+    .result-banner.ok  { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.2); color: var(--success); }
+    .result-banner.err { background: rgba(239,68,68,.1);  border: 1px solid rgba(239,68,68,.2);  color: var(--danger); }
+    .group-bar {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+      Forwarder
+    </div>
+    <span class="nav-section">Menü</span>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Panel
+    </a>
+    <a class="nav-item" href="/accounts/ekle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Hesap Ekle
+    </a>
+    <a class="nav-item active" href="/rules/toplu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+      Toplu Kural
+    </a>
+    <div class="sidebar-footer"><div class="status-pill"><div class="pulse"></div>Sistem Aktif</div></div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <div class="main-header">
+      <h1>⚡ Toplu Kural Ekle</h1>
+      <p>Kaynak ve hedefi bir kez gir → satır satır hesap-kişi eşleştir → tek tıkla hepsini kaydet</p>
+    </div>
+
+    <!-- ── KAYNAK & HEDEF ── -->
+    <div class="card">
+      <div class="card-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
+        Grup Ayarları (tüm satırlar için geçerli)
+      </div>
+
+      <div class="group-bar">
+        <div class="field" style="margin:0">
+          <label>📥 Kaynak Grup</label>
+          <div class="input-with-action">
+            <input class="row-input" type="text" id="source_chat_id" placeholder="-100... veya t.me/+link">
+            <button type="button" class="btn-find" onclick="openFinder('source_chat_id')">🔍</button>
+          </div>
+        </div>
+        <div class="field" style="margin:0">
+          <label>📤 Hedef Grup</label>
+          <div class="input-with-action">
+            <input class="row-input" type="text" id="destination_id" placeholder="-100... veya t.me/+link">
+            <button type="button" class="btn-find" onclick="openFinder('destination_id')">🔍</button>
+          </div>
+        </div>
+        <div class="field" style="margin:0">
+          <label>📝 Açıklama <span class="text-muted">(opsiyonel)</span></label>
+          <input class="row-input" type="text" id="bulk_desc" placeholder="Örn: VIP yönlendirme">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SATIR TABLOSU ── -->
+    <div class="card" style="margin-top:1.25rem">
+      <div class="flex items-center justify-between mb-3">
+        <div class="card-title" style="margin:0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          Hesap → Kişi Eşleştirmeleri
+        </div>
+        <button class="btn btn-secondary" onclick="addRow()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg>
+          Satır Ekle
+        </button>
+      </div>
+
+      <div class="alert alert-info" style="margin-bottom:1rem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>Her satır = bir kural. <b>Hesap</b> seç, <b>Kişi ID</b>'yi gir (boş bırakırsan o hesap gruptaki herkesi dinler).</span>
+      </div>
+
+      <table class="bulk-table" id="rulesTable">
+        <thead>
+          <tr>
+            <th class="row-num">#</th>
+            <th style="min-width:200px">Hangi Hesap İletecek?</th>
+            <th style="min-width:180px">Sadece Bu Kişiden <span style="font-weight:400;text-transform:none;color:var(--muted)">(boş = herkes)</span></th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="rowsBody">
+          <!-- satırlar JS ile eklenir -->
+        </tbody>
+      </table>
+
+      <div id="emptyNote" style="text-align:center;padding:2rem;color:var(--muted);font-size:.875rem">
+        ↑ Satır Ekle butonuna bas
+      </div>
+    </div>
+
+    <!-- STICKY BAR -->
+    <div class="sticky-bar">
+      <button class="btn btn-primary btn-lg" onclick="submitAll()" id="btnSubmit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+        Tüm Kuralları Kaydet
+      </button>
+      <button class="btn btn-secondary btn-lg" onclick="addRow()">+ Satır Ekle</button>
+      <span id="rowCount" class="text-sm text-muted"></span>
+    </div>
+
+    <div class="result-banner" id="resultBanner"></div>
+  </main>
+</div>
+
+<!-- ── GRUP ID BULUCU MODAL ── -->
+<div class="modal-overlay" id="finderModal">
+  <div class="modal">
+    <div class="modal-title">🔍 Grup ID Bul</div>
+    <div class="modal-sub">Davet linki, @username veya t.me/... linki yapıştır</div>
+
+    <!-- Hangi hesabı kullanalım -->
+    <div class="field" style="margin-bottom:.75rem">
+      <label style="font-size:.75rem">Aramak için hangi hesabı kullanalım?</label>
+      <select id="finderAccount" class="row-select">
+        {% for acc in accounts %}
+        <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <input class="row-input w-full" id="finderInput" type="text"
+             placeholder="https://t.me/+AbCdEfGh  veya  @grupadi">
+    </div>
+
+    <div class="modal-result" id="finderResult">
+      <div class="big-id" id="resultId"></div>
+      <div class="small-name" id="resultName"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
+      <button class="btn btn-primary" id="btnSearch" onclick="doSearch()">🔎 Ara</button>
+      <button class="btn btn-success" id="btnUse" style="display:none" onclick="useResult()">✅ Kullan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─── accounts list from server ─── */
+const ACCOUNTS = [
+  {% for acc in accounts %}
+  { id: {{ acc.id }}, name: "{{ acc.name }}", phone: "{{ acc.phone }}" },
+  {% endfor %}
+];
+
+/* ─── Row management ─── */
+let rowCount = 0;
+
+function addRow() {
+  rowCount++;
+  document.getElementById('emptyNote').style.display = 'none';
+
+  const tbody = document.getElementById('rowsBody');
+  const tr = document.createElement('tr');
+  tr.id = 'row-' + rowCount;
+  tr.dataset.rowId = rowCount;
+
+  const accOptions = ACCOUNTS.map(a =>
+    `<option value="${a.id}">${a.name} (${a.phone})</option>`
+  ).join('');
+
+  tr.innerHTML = `
+    <td class="row-num">${rowCount}</td>
+    <td>
+      <select class="row-select" data-field="account_id">
+        ${accOptions.length ? accOptions : '<option value="">— Hesap yok —</option>'}
+      </select>
+    </td>
+    <td>
+      <input class="row-input" type="text" data-field="sender_id"
+             placeholder="Kişi ID (boş = herkes)">
+    </td>
+    <td>
+      <button class="btn-del-row" onclick="removeRow(${rowCount})" title="Sil">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+  updateCount();
+}
+
+function removeRow(id) {
+  const el = document.getElementById('row-' + id);
+  if (el) el.remove();
+  if (!document.getElementById('rowsBody').children.length) {
+    document.getElementById('emptyNote').style.display = '';
+  }
+  updateCount();
+}
+
+function updateCount() {
+  const n = document.getElementById('rowsBody').children.length;
+  document.getElementById('rowCount').textContent = n > 0 ? `${n} satır` : '';
+}
+
+/* ─── Submit ─── */
+async function submitAll() {
+  const src  = document.getElementById('source_chat_id').value.trim();
+  const dest = document.getElementById('destination_id').value.trim();
+  const desc = document.getElementById('bulk_desc').value.trim();
+
+  if (!src || !dest) { alert('Kaynak ve hedef grup gerekli!'); return; }
+
+  const rows = [];
+  document.querySelectorAll('#rowsBody tr').forEach(tr => {
+    const accId  = tr.querySelector('[data-field="account_id"]')?.value;
+    const sender = tr.querySelector('[data-field="sender_id"]')?.value.trim();
+    if (accId) rows.push({ account_id: parseInt(accId), sender_id: sender || '' });
+  });
+
+  if (!rows.length) { alert('En az 1 satır ekle!'); return; }
+
+  const btn = document.getElementById('btnSubmit');
+  btn.innerHTML = '<span class="spin"></span> Kaydediliyor...';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('/rules/toplu', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_chat_id: src, destination_id: dest, description: desc, rows })
+    });
+    const d = await resp.json();
+    const banner = document.getElementById('resultBanner');
+
+    if (d.error) {
+      banner.className = 'result-banner err';
+      banner.textContent = '❌ ' + d.error;
+    } else {
+      banner.className = 'result-banner ok';
+      let msg = `✅ ${d.added} kural başarıyla eklendi!`;
+      if (d.errors?.length) msg += '  ⚠️ ' + d.errors.join('  ');
+      banner.textContent = msg;
+      // Satırları temizle
+      document.getElementById('rowsBody').innerHTML = '';
+      document.getElementById('emptyNote').style.display = '';
+      updateCount();
+    }
+    banner.style.display = 'block';
+    banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } catch(e) {
+    alert('Sunucu hatası: ' + e);
+  } finally {
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg> Tüm Kuralları Kaydet';
+    btn.disabled = false;
+  }
+}
+
+/* ─── Finder modal ─── */
+let _targetField = null, _foundId = null;
+
+function openFinder(fieldId) {
+  _targetField = fieldId; _foundId = null;
+  document.getElementById('finderInput').value = '';
+  const r = document.getElementById('finderResult');
+  r.className = 'modal-result'; r.style.display = 'none';
+  document.getElementById('btnUse').style.display = 'none';
+  document.getElementById('finderModal').classList.add('open');
+  setTimeout(() => document.getElementById('finderInput').focus(), 80);
+}
+function closeModal() { document.getElementById('finderModal').classList.remove('open'); }
+
+async function doSearch() {
+  const link  = document.getElementById('finderInput').value.trim();
+  const accId = document.getElementById('finderAccount').value;
+  if (!link) return;
+  if (!accId) { alert('Önce bir hesap seç'); return; }
+
+  const btn = document.getElementById('btnSearch');
+  btn.innerHTML = '<span class="spin"></span> Aranıyor...'; btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('link', link); fd.append('account_id', accId);
+
+  try {
+    const resp = await fetch('/resolve-link', { method: 'POST', body: fd });
+    const d = await resp.json();
+    const box = document.getElementById('finderResult');
+    box.style.display = 'block';
+    if (d.error) {
+      box.className = 'modal-result err';
+      document.getElementById('resultId').textContent = '❌ ' + d.error;
+      document.getElementById('resultName').textContent = '';
+      document.getElementById('btnUse').style.display = 'none';
+    } else {
+      box.className = 'modal-result ok';
+      _foundId = d.id;
+      document.getElementById('resultId').textContent = d.id;
+      document.getElementById('resultName').textContent = d.title + ' · ' + d.type;
+      document.getElementById('btnUse').style.display = '';
+    }
+  } catch(e) { alert('Sunucu hatası: ' + e); }
+  finally { btn.innerHTML = '🔎 Ara'; btn.disabled = false; }
+}
+
+function useResult() {
+  if (_foundId && _targetField) document.getElementById(_targetField).value = _foundId;
+  closeModal();
+}
+
+document.getElementById('finderInput').addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+document.getElementById('finderModal').addEventListener('click', e => {
+  if (e.target.id === 'finderModal') closeModal();
+});
+
+/* Başlangıçta 3 boş satır */
+addRow(); addRow(); addRow();
+</script>
+</body>
+</html>
