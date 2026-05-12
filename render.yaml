@@ -1,6 +1,12 @@
 services:
   - type: web
     name: telegram-forwarder
+    env: python
+    buildCommand: pip install -r requirements.txt && pip install gunicorn uvicorn
+    startCommand: gunicorn app:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+services:
+  - type: web
+    name: telegram-forwarder
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn -w 1 -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:10000
