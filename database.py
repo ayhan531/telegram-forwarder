@@ -89,64 +89,64 @@ class MessageMapping(Base):
     last_reactions      = Column(String, nullable=True, default="")
 
 
-# ── Tabloları oluştur ──
-Base.metadata.create_all(bind=engine)
+def init_db():
+    # ── Tabloları oluştur ──
+    Base.metadata.create_all(bind=engine)
 
-# ── Otomatik migration: eksik kolonları ekle ──
-_migrations = [
-    "ALTER TABLE message_mappings ADD COLUMN last_reactions TEXT DEFAULT ''",
-    "ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)",
-]
-for _sql in _migrations:
+    # ── Otomatik migration: eksik kolonları ekle ──
+    _migrations = [
+        "ALTER TABLE message_mappings ADD COLUMN last_reactions TEXT DEFAULT ''",
+        "ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)",
+    ]
+    for _sql in _migrations:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(_sql))
+                conn.commit()
+        except Exception:
+            pass  # Zaten varsa sessizce geç
+
+    # ── Varsayılan kullanıcıları oluştur ──
+    _DEFAULT_USERS = [
+        ("kayhan",  "ky_5510_*",  "Kayhan"),
+        ("levent",  "lv_4432_?",  "Levent"),
+        ("cuneyt",  "cn_9821_!",  "Cüneyt"),
+    ]
+
+    db = SessionLocal()
+    # Eskileri sil/güncelle (Migration)
     try:
-        with engine.connect() as conn:
-            conn.execute(text(_sql))
-            conn.commit()
-    except Exception:
-        pass  # Zaten varsa sessizce geç
+        # Cemal'i sil
+        db.query(User).filter(User.username == "cemal").delete()
+        
+        # Şifreleri ve isimleri güncelle
+        mapping = {
+            "cuneyt": ("cuneyt", "Cüneyt", "cn_9821_!"),
+            "levent": ("levent", "Levent", "lv_4432_?"),
+            "kayhan": ("kayhan", "Kayhan", "ky_5510_*"),
+            "comert": ("cuneyt", "Cüneyt", "cn_9821_!"),
+            "tolga":  ("levent", "Levent", "lv_4432_?"),
+            "furkan": ("kayhan", "Kayhan", "ky_5510_*"),
+        }
+        for old_un, (new_un, new_disp, new_pwd) in mapping.items():
+            existing = db.query(User).filter(User.username == old_un).first()
+            if existing:
+                existing.username = new_un
+                existing.display_name = new_disp
+                existing.password_hash = hash_password(new_pwd)
 
-# ── Varsayılan kullanıcıları oluştur ──
-_DEFAULT_USERS = [
-    ("kayhan",  "ky_5510_*",  "Kayhan"),
-    ("levent",  "lv_4432_?",  "Levent"),
-    ("cuneyt",  "cn_9821_!",  "Cüneyt"),
-]
+        db.commit()
+    except Exception as e:
+        print(f"User migration error: {e}")
+        db.rollback()
 
-db = SessionLocal()
-
-# Eskileri sil/güncelle (Migration)
-try:
-    # Cemal'i sil
-    db.query(User).filter(User.username == "cemal").delete()
-    
-    # Şifreleri ve isimleri güncelle
-    mapping = {
-        "cuneyt": ("cuneyt", "Cüneyt", "cn_9821_!"),
-        "levent": ("levent", "Levent", "lv_4432_?"),
-        "kayhan": ("kayhan", "Kayhan", "ky_5510_*"),
-        "comert": ("cuneyt", "Cüneyt", "cn_9821_!"),
-        "tolga":  ("levent", "Levent", "lv_4432_?"),
-        "furkan": ("kayhan", "Kayhan", "ky_5510_*"),
-    }
-    for old_un, (new_un, new_disp, new_pwd) in mapping.items():
-        existing = db.query(User).filter(User.username == old_un).first()
-        if existing:
-            existing.username = new_un
-            existing.display_name = new_disp
-            existing.password_hash = hash_password(new_pwd)
-
+    # Eksikleri ekle
+    for _uname, _pwd, _display in _DEFAULT_USERS:
+        if not db.query(User).filter(User.username == _uname).first():
+            db.add(User(
+                username=_uname,
+                password_hash=hash_password(_pwd),
+                display_name=_display
+            ))
     db.commit()
-except Exception as e:
-    print(f"User migration error: {e}")
-    db.rollback()
-
-# Eksikleri ekle
-for _uname, _pwd, _display in _DEFAULT_USERS:
-    if not db.query(User).filter(User.username == _uname).first():
-        db.add(User(
-            username=_uname,
-            password_hash=hash_password(_pwd),
-            display_name=_display
-        ))
-db.commit()
-db.close()
+    db.close()

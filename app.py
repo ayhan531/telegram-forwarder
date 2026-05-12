@@ -256,11 +256,18 @@ async def backfill_mappings(client: TelegramClient, account: Account, limit: int
 
 async def start_client(account: Account):
     global clients
+    print(f"[{account.name}] Başlatılıyor...")
     client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
-    await client.connect()
+    
+    try:
+        # 30 saniye timeout ekle ki startup kilitlenmesin
+        await asyncio.wait_for(client.connect(), timeout=30)
+    except Exception as e:
+        print(f"[{account.name}] Bağlantı hatası: {e}")
+        return
 
     if not await client.is_user_authorized():
-        print(f"[{account.name}] Yetkilendirme hatasi! Lutfen tekrar giris yapin.")
+        print(f"[{account.name}] Yetkilendirme hatası! Lütfen tekrar giriş yapın.")
         # DB'de is_active=False yap ki dashboard'da uyarı görünsün
         try:
             db = SessionLocal()
@@ -275,6 +282,7 @@ async def start_client(account: Account):
         return
 
     clients[account.id] = client
+    print(f"[{account.name}] Aktif.")
 
     # ── Geçmiş mesajları eşleştir (reaksiyon iletimi için) ──
     asyncio.create_task(backfill_mappings(client, account))
@@ -463,11 +471,23 @@ async def start_client(account: Account):
 
 @app.on_event("startup")
 async def startup_event():
+    print("[System] Uygulama başlatılıyor...")
+    try:
+        database.init_db()
+        print("[System] Veritabanı hazır.")
+    except Exception as e:
+        print(f"[System] Veritabanı başlatma hatası: {e}")
+
     db = SessionLocal()
-    accounts = db.query(Account).filter(Account.is_active == True).all()
-    for account in accounts:
-        asyncio.create_task(start_client(account))
-    db.close()
+    try:
+        accounts = db.query(Account).filter(Account.is_active == True).all()
+        print(f"[System] {len(accounts)} aktif hesap başlatılıyor...")
+        for account in accounts:
+            asyncio.create_task(start_client(account))
+    except Exception as e:
+        print(f"[System] Hesap başlatma hatası: {e}")
+    finally:
+        db.close()
 
 # ── LOGIN / LOGOUT ──
 
