@@ -1204,6 +1204,91 @@ async def search_member(
         return JSONResponse({"error": str(e)}, status_code=400)
 
 
+@app.post("/find-sender")
+async def find_sender(
+    message_link: str = Form(...),
+    account_id: int = Form(...),
+):
+    """
+    Verilen Telegram mesaj linkinden gönderen kişinin ID'sini bulur.
+    İsim gizleyen veya anonim admin olan kullanıcılar için kullanılır.
+    Desteklenen formatlar:
+      - https://t.me/grupadi/123
+      - https://t.me/c/1234567890/123   (özel grup)
+      - t.me/c/...  veya  t.me/grupadi/...
+    """
+    from telethon import utils as tg_utils
+    from telethon.tl.types import PeerChannel, PeerUser
+
+    if account_id not in clients:
+        return JSONResponse({"error": "Seçilen hesap aktif değil."}, status_code=400)
+
+    client = clients[account_id]
+    link = message_link.strip().rstrip("/")
+
+    try:
+        # ── Link'i parçala ──
+        if "t.me/c/" in link:
+            # Özel grup: t.me/c/<channel_id>/<msg_id>
+            tail = link.split("t.me/c/")[-1]
+            parts = [p for p in tail.split("/") if p]
+            if len(parts) < 2:
+                return JSONResponse({"error": "Link formatı yanlış. Örn: t.me/c/1234567/89"}, status_code=400)
+            channel_id = int(parts[0])
+            msg_id = int(parts[1])
+            peer = await client.get_entity(PeerChannel(channel_id))
+        elif "t.me/" in link:
+            # Açık grup/kanal: t.me/<username>/<msg_id>
+            tail = link.split("t.me/")[-1]
+            parts = [p for p in tail.split("/") if p]
+            if len(parts) < 2:
+                return JSONResponse({"error": "Link formatı yanlış. Örn: t.me/grupadi/123"}, status_code=400)
+            username = parts[0]
+            msg_id = int(parts[1])
+            peer = await client.get_entity(f"@{username}")
+        else:
+            return JSONResponse({"error": "Geçersiz link. t.me/... formatında olmalı."}, status_code=400)
+
+        # ── Mesajı çek ──
+        msg = await client.get_messages(peer, ids=msg_id)
+        if not msg:
+            return JSONResponse({"error": "Mesaj bulunamadı. Hesabın bu gruba üye olduğundan emin ol."}, status_code=404)
+
+        # ── Göndereni belirle ──
+        from_id = getattr(msg, "from_id", None)
+
+        # Anonim admin: from_id PeerChannel olur (mesaj kanal kimliğiyle gönderilmiş)
+        if from_id is None or isinstance(from_id, PeerChannel):
+            chat_id = str(tg_utils.get_peer_id(peer))
+            chat_title = getattr(peer, "title", "Anonim Admin")
+            return JSONResponse({
+                "id": chat_id,
+                "name": chat_title,
+                "username": "",
+                "note": "⚠️ Bu kişi anonim admin olarak yazıyor. Filtre için grubun kendi ID'si kullanılır."
+            })
+
+        # Normal kullanıcı
+        sender = await client.get_entity(from_id)
+        sender_id = str(tg_utils.get_peer_id(sender))
+        first = getattr(sender, "first_name", "") or ""
+        last  = getattr(sender, "last_name",  "") or ""
+        uname = getattr(sender, "username",   "") or ""
+        display = f"{first} {last}".strip() or f"ID:{sender_id}"
+
+        return JSONResponse({
+            "id": sender_id,
+            "name": display,
+            "username": uname,
+            "note": ""
+        })
+
+    except ValueError:
+        return JSONResponse({"error": "Mesaj ID sayı olmalı."}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"error": f"Hata: {str(e)}"}, status_code=400)
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))

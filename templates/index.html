@@ -170,9 +170,8 @@
             <label>👤 Sadece bu kişiden ilet <span class="text-muted">(boş = herkes)</span></label>
             <div class="input-with-action">
               <input type="text" name="sender_id" id="sender_id" placeholder="Kişi ID (opsiyonel)">
-              <button type="button" class="btn-find" onclick="openMemberSearch()">
-                🔍 Üye Ara
-              </button>
+              <button type="button" class="btn-find" onclick="openMemberSearch()">🔍 Üye Ara</button>
+              <button type="button" class="btn-find" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4)" onclick="openMsgFinder()">📎 Mesajdan Bul</button>
             </div>
           </div>
 
@@ -321,6 +320,34 @@
   </div>
 </div>
 
+<!-- ── MESAJ LİNKİNDEN KİŞİ BUL MODAL ── -->
+<div class="modal-overlay" id="msgFinderModal">
+  <div class="modal">
+    <div class="modal-title">📎 Mesaj Linkinden Kişi Bul</div>
+    <div class="modal-sub">İsim gizleyen veya anonim admin için: o kişinin yazdığı mesajın linkini yapıştır</div>
+
+    <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem;background:var(--surface2);border-radius:8px;padding:.6rem .9rem;line-height:1.6">
+      <b>Nasıl link alınır?</b><br>
+      Telegram'da mesaja uzun bas → <b>Mesaj Linki Kopyala</b><br>
+      Örn: <code style="color:#93c5fd">https://t.me/grupadi/123</code> veya <code style="color:#93c5fd">https://t.me/c/1234567/89</code>
+    </div>
+
+    <div class="field">
+      <input class="w-full" id="msgFinderInput" type="text"
+             placeholder="https://t.me/grupadi/123"
+             style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem 1rem;color:var(--text);outline:none;font-size:.9rem;width:100%">
+    </div>
+
+    <div id="msgFinderResult" style="display:none;margin-top:.5rem"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeMsgFinder()">İptal</button>
+      <button class="btn btn-primary" id="btnMsgFind" onclick="doMsgFind()">🔎 Bul</button>
+      <button class="btn btn-success" id="btnMsgUse" style="display:none" onclick="useMsgResult()">✅ Kullan</button>
+    </div>
+  </div>
+</div>
+
 <script>
 let _targetField = null, _foundId = null;
 
@@ -434,6 +461,65 @@ function selectMember(id, name) {
 
 document.getElementById('memberQuery').addEventListener('keydown', e => { if(e.key === 'Enter') doMemberSearch(); });
 document.getElementById('memberModal').addEventListener('click', e => { if(e.target.id === 'memberModal') closeMemberModal(); });
+
+// ── MESAJ LİNKİNDEN KİŞİ BUL ──
+let _msgFoundId = null;
+
+function openMsgFinder() {
+  _msgFoundId = null;
+  document.getElementById('msgFinderInput').value = '';
+  document.getElementById('msgFinderResult').style.display = 'none';
+  document.getElementById('msgFinderResult').innerHTML = '';
+  document.getElementById('btnMsgUse').style.display = 'none';
+  document.getElementById('msgFinderModal').classList.add('open');
+  setTimeout(() => document.getElementById('msgFinderInput').focus(), 80);
+}
+function closeMsgFinder() { document.getElementById('msgFinderModal').classList.remove('open'); }
+
+async function doMsgFind() {
+  const link = document.getElementById('msgFinderInput').value.trim();
+  if (!link) return;
+  const accId = document.getElementById('account_id').value;
+  const btn = document.getElementById('btnMsgFind');
+  btn.innerHTML = '<span class="spin"></span> Aranıyor...'; btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('message_link', link);
+  fd.append('account_id', accId);
+
+  try {
+    const res = await fetch('/find-sender', { method: 'POST', body: fd });
+    const d = await res.json();
+    const box = document.getElementById('msgFinderResult');
+    box.style.display = 'block';
+
+    if (d.error) {
+      box.innerHTML = `<div style="color:#f87171;padding:.75rem;background:rgba(248,113,113,.08);border-radius:8px;font-size:.85rem">❌ ${d.error}</div>`;
+      document.getElementById('btnMsgUse').style.display = 'none';
+    } else {
+      _msgFoundId = d.id;
+      const noteHtml = d.note ? `<div style="margin-top:.4rem;font-size:.75rem;color:#fbbf24">${d.note}</div>` : '';
+      const uname = d.username ? `<span style="color:var(--text-muted)"> · @${d.username}</span>` : '';
+      box.innerHTML = `
+        <div style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25);border-radius:8px;padding:.75rem 1rem">
+          <div style="font-size:.78rem;color:var(--text-muted);margin-bottom:.25rem">Bulunan kişi</div>
+          <div style="font-weight:700;font-size:1rem">${d.name}${uname}</div>
+          <div style="font-family:monospace;font-size:.85rem;color:#93c5fd;margin-top:.25rem">ID: ${d.id}</div>
+          ${noteHtml}
+        </div>`;
+      document.getElementById('btnMsgUse').style.display = '';
+    }
+  } catch(e) { alert('Sunucu hatası: ' + e); }
+  finally { btn.innerHTML = '🔎 Bul'; btn.disabled = false; }
+}
+
+function useMsgResult() {
+  if (_msgFoundId) document.getElementById('sender_id').value = _msgFoundId;
+  closeMsgFinder();
+}
+
+document.getElementById('msgFinderInput').addEventListener('keydown', e => { if(e.key === 'Enter') doMsgFind(); });
+document.getElementById('msgFinderModal').addEventListener('click', e => { if(e.target.id === 'msgFinderModal') closeMsgFinder(); });
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');
