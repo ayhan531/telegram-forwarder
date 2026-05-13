@@ -288,7 +288,7 @@ async def backfill_mappings(client: TelegramClient, account: Account, limit: int
         db.close()
 
 
-async def start_client(account: Account):
+async def start_client(account: Account, _existing_client: TelegramClient = None):
     global clients
 
     # — Zaten bağlıysa tekrar başlatma (duplicate event handler önle) —
@@ -298,49 +298,54 @@ async def start_client(account: Account):
             print(f"[{account.name}] Zaten bağlı, atlanıyor.")
             return
         else:
-            # Kopuk client varsa temizle
             try:
                 await existing.disconnect()
             except Exception:
                 pass
             del clients[account.id]
 
-    print(f"[{account.name}] Başlatılıyor...")
-    client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
+    if _existing_client is not None:
+        # Kullanıcı az önce giriş yaptı — client zaten bağlı ve authorized
+        # Disconnect/reconnect YOK → session flush race condition ortadan kalkar
+        client = _existing_client
+        print(f"[{account.name}] Mevcut bağlantı kullanılıyor (yeni giriş).")
+    else:
+        print(f"[{account.name}] Başlatılıyor...")
+        client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
 
-    try:
-        await asyncio.wait_for(client.connect(), timeout=30)
-    except asyncio.TimeoutError:
-        print(f"[{account.name}] Bağlantı zaman aşıldı.")
-        return
-    except Exception as e:
-        print(f"[{account.name}] Bağlantı hatası: {e}")
-        return
-
-    try:
-        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
-    except asyncio.TimeoutError:
-        print(f"[{account.name}] Yetkilendirme kontrolü zaman aşıldı.")
-        await client.disconnect()
-        return
-    except Exception as e:
-        print(f"[{account.name}] Yetkilendirme hatası: {e}")
-        await client.disconnect()
-        return
-
-    if not authorized:
-        print(f"[{account.name}] Oturum geçersiz. Lütfen tekrar giriş yapın.")
         try:
-            db2 = SessionLocal()
-            acc_db = db2.query(Account).filter(Account.id == account.id).first()
-            if acc_db:
-                acc_db.is_active = False
-                db2.commit()
-            db2.close()
-        except Exception:
-            pass
-        await client.disconnect()
-        return
+            await asyncio.wait_for(client.connect(), timeout=30)
+        except asyncio.TimeoutError:
+            print(f"[{account.name}] Bağlantı zaman aşıldı.")
+            return
+        except Exception as e:
+            print(f"[{account.name}] Bağlantı hatası: {e}")
+            return
+
+        try:
+            authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
+        except asyncio.TimeoutError:
+            print(f"[{account.name}] Yetkilendirme kontrolü zaman aşıldı.")
+            await client.disconnect()
+            return
+        except Exception as e:
+            print(f"[{account.name}] Yetkilendirme hatası: {e}")
+            await client.disconnect()
+            return
+
+        if not authorized:
+            print(f"[{account.name}] Oturum geçersiz. Lütfen tekrar giriş yapın.")
+            try:
+                db2 = SessionLocal()
+                acc_db = db2.query(Account).filter(Account.id == account.id).first()
+                if acc_db:
+                    acc_db.is_active = False
+                    db2.commit()
+                db2.close()
+            except Exception:
+                pass
+            await client.disconnect()
+            return
 
     clients[account.id] = client
     print(f"[{account.name}] Aktif.")
@@ -646,7 +651,7 @@ async def _watch_qr(temp_id: str):
 
 
 async def _finalize_qr_session(temp_id: str):
-    """QR veya 2FA tamamlandıktan sonra hesabı DB'ye kaydeder ve client'a başlar."""
+    """QR veya 2FA tamamlandıktan sonra hesabı DB'ye kaydeder ve mevcut client ile başlar."""
     session = qr_sessions.get(temp_id)
     if not session:
         return
@@ -655,17 +660,6 @@ async def _finalize_qr_session(temp_id: str):
         me = await client.get_me()
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if raw_phone and not str(raw_phone).startswith("+") else str(raw_phone)
-
-        # Session diske yazılsın — önce manuel save, sonra disconnect
-        try:
-            client.session.save()          # WAL → main DB'ye yaz
-        except Exception:
-            pass
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
-        await asyncio.sleep(3)            # SQLite WAL checkpoint için yeterli süre
 
         db = SessionLocal()
         try:
@@ -682,7 +676,8 @@ async def _finalize_qr_session(temp_id: str):
                 db.add(new_acc)
                 db.commit()
                 db.refresh(new_acc)
-                asyncio.create_task(start_client(new_acc))
+                # Mevcut bağlı client'i kullan — disconnect/reconnect yok!
+                asyncio.create_task(start_client(new_acc, _existing_client=client))
                 print(f"[QR] Yeni hesap eklendi: {session['name']} ({phone})")
             else:
                 uid = session.get("user_id")
@@ -692,8 +687,7 @@ async def _finalize_qr_session(temp_id: str):
                 if exists.is_active is False:
                     exists.is_active = True
                     db.commit()
-                if exists.id not in clients:
-                    asyncio.create_task(start_client(exists))
+                asyncio.create_task(start_client(exists, _existing_client=client))
                 print(f"[QR] Hesap güncellendi: {phone}")
         finally:
             db.close()
@@ -912,21 +906,13 @@ async def verify_code(
         print(f"Dogrulama hatasi: {e}")
         return RedirectResponse(url=f"/accounts/verify?phone={phone}", status_code=303)
 
-    # 2FA yoksa başarılı — session'u kaydet
-    try:
-        client.session.save()
-        await client.disconnect()
-    except Exception:
-        pass
-    await asyncio.sleep(3)
-
+    # 2FA yoksa başarılı — mevcut client'i kullan (disconnect/reconnect yok!)
     exists = db.query(Account).filter(Account.phone == phone).first()
     if exists:
         if uid and exists.user_id is None:
             exists.user_id = uid
             db.commit()
-        if exists.id not in clients:
-            asyncio.create_task(start_client(exists))
+        asyncio.create_task(start_client(exists, _existing_client=client))
     else:
         new_acc = Account(
             user_id=uid, name=name, phone=phone,
@@ -934,7 +920,8 @@ async def verify_code(
         )
         db.add(new_acc)
         db.commit()
-        asyncio.create_task(start_client(new_acc))
+        db.refresh(new_acc)
+        asyncio.create_task(start_client(new_acc, _existing_client=client))
 
     del login_sessions[phone]
     return RedirectResponse(url="/", status_code=303)
@@ -982,21 +969,13 @@ async def verify_2fa_code(
             status_code=303
         )
 
-    # Başarılı — session'u kaydet
-    try:
-        client.session.save()
-        await client.disconnect()
-    except Exception:
-        pass
-    await asyncio.sleep(2)
-
+    # Başarılı — mevcut client'i kullan (disconnect/reconnect yok!)
     exists = db.query(Account).filter(Account.phone == phone).first()
     if exists:
         if uid and exists.user_id is None:
             exists.user_id = uid
             db.commit()
-        if exists.id not in clients:
-            asyncio.create_task(start_client(exists))
+        asyncio.create_task(start_client(exists, _existing_client=client))
     else:
         new_acc = Account(
             user_id=uid, name=name, phone=phone,
@@ -1004,7 +983,8 @@ async def verify_2fa_code(
         )
         db.add(new_acc)
         db.commit()
-        asyncio.create_task(start_client(new_acc))
+        db.refresh(new_acc)
+        asyncio.create_task(start_client(new_acc, _existing_client=client))
 
     del login_sessions[phone]
     return RedirectResponse(url="/", status_code=303)
