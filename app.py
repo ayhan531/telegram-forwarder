@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from telethon import TelegramClient, events, functions, types
+from telethon.errors import SessionPasswordNeededError
 from dotenv import load_dotenv
 import qrcode
 
@@ -603,20 +604,36 @@ async def _watch_qr(temp_id: str):
         return
     try:
         await session["qr"].wait(timeout=120)
-        session["status"] = "ok"
-        client: TelegramClient = session["client"]
+    except SessionPasswordNeededError:
+        # QR tarandı ama 2FA şifresi gerekiyor — client bağlı kalsın
+        session["status"] = "2fa_required"
+        print(f"[QR] 2FA gerekli: {temp_id}")
+        return
+    except Exception as e:
+        print(f"[QR] Login hatası ({temp_id}): {e}")
+        session["status"] = "expired"
+        return
+
+    session["status"] = "ok"
+    await _finalize_qr_session(temp_id)
+
+
+async def _finalize_qr_session(temp_id: str):
+    """QR veya 2FA tamamlandıktan sonra hesabı DB'ye kaydeder ve client'a başlar."""
+    session = qr_sessions.get(temp_id)
+    if not session:
+        return
+    client: TelegramClient = session["client"]
+    try:
         me = await client.get_me()
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if raw_phone and not str(raw_phone).startswith("+") else str(raw_phone)
 
-        # ── Önce client'ı kapat: session SQLite'a yazılır, lock serbest kalır ──
-        # start_client yeni bir TelegramClient açar; eğer eski client hâlâ
-        # bağlıysa session dosyası kilitli kalır → is_user_authorized() False döner.
+        # Session diske yazılsın
         try:
             await client.disconnect()
         except Exception:
             pass
-        # Session dosyasının diske tamamen yazılması için kısa bekle
         await asyncio.sleep(1)
 
         db = SessionLocal()
@@ -637,25 +654,22 @@ async def _watch_qr(temp_id: str):
                 asyncio.create_task(start_client(new_acc))
                 print(f"[QR] Yeni hesap eklendi: {session['name']} ({phone})")
             else:
-                # Hesap var ama user_id atanmamışsa güncelle
                 uid = session.get("user_id")
                 if uid and exists.user_id is None:
                     exists.user_id = uid
                     db.commit()
-                    print(f"[QR] Hesap user_id güncellendi: {phone} → user {uid}")
-                else:
-                    print(f"[QR] Hesap zaten kayıtlı: {phone}")
-                # is_active=False ise temizle, client'ı başlat
                 if exists.is_active is False:
                     exists.is_active = True
                     db.commit()
                 if exists.id not in clients:
                     asyncio.create_task(start_client(exists))
+                print(f"[QR] Hesap güncellendi: {phone}")
         finally:
             db.close()
     except Exception as e:
-        print(f"[QR] Login hatası ({temp_id}): {e}")
-        session["status"] = "expired"
+        print(f"[QR] Finalize hatası ({temp_id}): {e}")
+        if temp_id in qr_sessions:
+            qr_sessions[temp_id]["status"] = "expired"
 
 
 @app.post("/accounts/qr-start")
@@ -746,11 +760,13 @@ async def qr_status(account_id: str = Query(...)):
     if status == "expired":
         qr_sessions.pop(account_id, None)
         return JSONResponse({"status": "expired"})
+    if status == "2fa_required":
+        # Session'u silme — şifre bekleniyor
+        return JSONResponse({"status": "2fa_required"})
 
     # Hâlâ bekliyor → QR URL taze mi kontrol et, yenile
     try:
         qr_login = session["qr"]
-        # URL hâlâ geçerliyse gönder; süresi dolmuşsa recreate
         try:
             await qr_login.recreate()
         except Exception:
@@ -758,6 +774,37 @@ async def qr_status(account_id: str = Query(...)):
         return JSONResponse({"status": "pending", "qr_b64": _make_qr_b64(qr_login.url)})
     except Exception:
         return JSONResponse({"status": "pending"})
+
+
+@app.post("/accounts/qr-2fa")
+async def qr_2fa_verify(
+    account_id: str = Form(...),
+    password: str = Form(...),
+):
+    """
+    QR tarandıktan sonra 2 Adımlı Doğrulama şifresini alır ve girifi tamamlar.
+    """
+    session = qr_sessions.get(account_id)
+    if not session:
+        return JSONResponse({"error": "Oturum bulunamadı veya süresi doldu. Tekrar QR oluştur."}, status_code=404)
+    if session.get("status") != "2fa_required":
+        return JSONResponse({"error": "2FA beklenmiyordu."}, status_code=400)
+
+    client: TelegramClient = session["client"]
+    try:
+        await asyncio.wait_for(client.sign_in(password=password), timeout=20)
+    except asyncio.TimeoutError:
+        return JSONResponse({"error": "Şifre doğrulama zaman aşıldı. Tekrar dene."}, status_code=408)
+    except Exception as e:
+        err = str(e)
+        if "PASSWORD_HASH_INVALID" in err or "The password is invalid" in err:
+            return JSONResponse({"error": "Hatalı şifre. Lütfen tekrar dene."}, status_code=400)
+        return JSONResponse({"error": f"Giriş hatası: {err}"}, status_code=400)
+
+    # Şifre doğru — hesabı kaydet
+    session["status"] = "ok"
+    asyncio.create_task(_finalize_qr_session(account_id))
+    return JSONResponse({"status": "ok"})
 
 @app.post("/accounts/send_code")
 async def send_code(
