@@ -597,6 +597,16 @@ async def _watch_qr(temp_id: str):
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if raw_phone and not str(raw_phone).startswith("+") else str(raw_phone)
 
+        # ── Önce client'ı kapat: session SQLite'a yazılır, lock serbest kalır ──
+        # start_client yeni bir TelegramClient açar; eğer eski client hâlâ
+        # bağlıysa session dosyası kilitli kalır → is_user_authorized() False döner.
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        # Session dosyasının diske tamamen yazılması için kısa bekle
+        await asyncio.sleep(1)
+
         db = SessionLocal()
         try:
             exists = db.query(Account).filter(Account.phone == phone).first()
@@ -615,7 +625,7 @@ async def _watch_qr(temp_id: str):
                 asyncio.create_task(start_client(new_acc))
                 print(f"[QR] Yeni hesap eklendi: {session['name']} ({phone})")
             else:
-                # Hesap var ama user_id atanmamışsa güncelle (dashboard'da görünsün)
+                # Hesap var ama user_id atanmamışsa güncelle
                 uid = session.get("user_id")
                 if uid and exists.user_id is None:
                     exists.user_id = uid
@@ -623,7 +633,10 @@ async def _watch_qr(temp_id: str):
                     print(f"[QR] Hesap user_id güncellendi: {phone} → user {uid}")
                 else:
                     print(f"[QR] Hesap zaten kayıtlı: {phone}")
-                # Aktif değilse client'ı başlat
+                # is_active=False ise temizle, client'ı başlat
+                if exists.is_active is False:
+                    exists.is_active = True
+                    db.commit()
                 if exists.id not in clients:
                     asyncio.create_task(start_client(exists))
         finally:
@@ -653,14 +666,24 @@ async def qr_start(
         me = await client.get_me()
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if not str(raw_phone).startswith("+") else str(raw_phone)
+        # Disconnect önce: session dosyası kilitlenmeden start_client okusun
+        await client.disconnect()
+        await asyncio.sleep(0.5)
         db2 = SessionLocal()
-        if not db2.query(Account).filter(Account.phone == phone).first():
+        exists2 = db2.query(Account).filter(Account.phone == phone).first()
+        if not exists2:
             new_acc = Account(user_id=user.id, name=name, phone=phone, api_id=api_id,
                               api_hash=api_hash, session_file=session_file)
             db2.add(new_acc)
             db2.commit()
             db2.refresh(new_acc)
             asyncio.create_task(start_client(new_acc))
+        else:
+            if exists2.is_active is False:
+                exists2.is_active = True
+                db2.commit()
+            if exists2.id not in clients:
+                asyncio.create_task(start_client(exists2))
         db2.close()
         return JSONResponse({"status": "already_authorized"})
 
