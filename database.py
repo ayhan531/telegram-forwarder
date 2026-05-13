@@ -114,33 +114,60 @@ def init_db():
     ]
 
     db = SessionLocal()
-    # Eskileri sil/güncelle (Migration)
+
+    # ── Eski kullanıcıları düzgün taşı / sil ──
+    # Eski ad → yeni ad (None = sil, hesapları sahipsiz bırak)
+    _rename_map = {
+        "cemal":  None,
+        "comert": "cuneyt",
+        "tolga":  "levent",
+        "furkan": "kayhan",
+    }
     try:
-        # Cemal'i sil
-        db.query(User).filter(User.username == "cemal").delete()
-        
-        # Şifreleri ve isimleri güncelle
-        mapping = {
-            "cuneyt": ("cuneyt", "Cüneyt", "cn_9821_!"),
-            "levent": ("levent", "Levent", "lv_4432_?"),
-            "kayhan": ("kayhan", "Kayhan", "ky_5510_*"),
-            "comert": ("cuneyt", "Cüneyt", "cn_9821_!"),
-            "tolga":  ("levent", "Levent", "lv_4432_?"),
-            "furkan": ("kayhan", "Kayhan", "ky_5510_*"),
+        for old_un, new_un in _rename_map.items():
+            old_user = db.query(User).filter(User.username == old_un).first()
+            if not old_user:
+                continue
+
+            if new_un:
+                new_user = db.query(User).filter(User.username == new_un).first()
+                if new_user:
+                    # Hedef zaten var → hesapları hedefe aktar, eskiyi sil
+                    db.query(Account).filter(Account.user_id == old_user.id)\
+                        .update({"user_id": new_user.id}, synchronize_session=False)
+                    print(f"[Migration] {old_un} hesaplari {new_un}'e aktarildi.")
+                else:
+                    # Hedef yok → sadece yeniden adlandir
+                    old_user.username = new_un
+                    old_user.display_name = new_un.capitalize()
+                    # Silme yapma, kayit hala gecerli
+                    continue
+            else:
+                # cemal vb. → hesaplari NULL yap (unclaimed), kullaniciyi sil
+                db.query(Account).filter(Account.user_id == old_user.id)\
+                    .update({"user_id": None}, synchronize_session=False)
+                print(f"[Migration] {old_un} hesaplari sahipsiz birakildi.")
+
+            db.delete(old_user)
+
+        # Sifre ve display_name guncelle
+        _updates = {
+            "cuneyt": ("Cuneyt", "cn_9821_!"),
+            "levent": ("Levent", "lv_4432_?"),
+            "kayhan": ("Kayhan", "ky_5510_*"),
         }
-        for old_un, (new_un, new_disp, new_pwd) in mapping.items():
-            existing = db.query(User).filter(User.username == old_un).first()
-            if existing:
-                existing.username = new_un
-                existing.display_name = new_disp
-                existing.password_hash = hash_password(new_pwd)
+        for uname, (disp, pwd) in _updates.items():
+            u = db.query(User).filter(User.username == uname).first()
+            if u:
+                u.display_name  = disp
+                u.password_hash = hash_password(pwd)
 
         db.commit()
     except Exception as e:
-        print(f"User migration error: {e}")
+        print(f"[Migration] User migration error: {e}")
         db.rollback()
 
-    # Eksikleri ekle
+    # ── Eksik kullanicilari ekle ──
     for _uname, _pwd, _display in _DEFAULT_USERS:
         if not db.query(User).filter(User.username == _uname).first():
             db.add(User(
@@ -149,4 +176,22 @@ def init_db():
                 display_name=_display
             ))
     db.commit()
+
+    # ── Sahipsiz hesaplari kurtar: user_id var ama kullanici silinmis ──
+    try:
+        valid_ids = [u.id for u in db.query(User).all()]
+        if valid_ids:
+            orphaned = db.query(Account).filter(
+                Account.user_id != None,
+                ~Account.user_id.in_(valid_ids)
+            ).all()
+            for acc in orphaned:
+                print(f"[Migration] Orphan duzeltildi: {acc.name} user_id={acc.user_id} -> NULL")
+                acc.user_id = None
+            if orphaned:
+                db.commit()
+    except Exception as e:
+        print(f"[Migration] Orphan cleanup error: {e}")
+        db.rollback()
+
     db.close()
