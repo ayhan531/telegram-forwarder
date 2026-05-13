@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Doğrulama Kodu — Telegram Forwarder</title>
+  <title>{% if step == '2fa' %}2FA Şifresi{% else %}Doğrulama Kodu{% endif %} — Telegram Forwarder</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/style.css">
@@ -23,6 +23,52 @@
   </aside>
 
   <main class="main">
+
+    {% if step == '2fa' %}
+    <!-- ══ 2FA ŞİFRE ADIMI ══ -->
+    <div class="main-header">
+      <h1>🔐 2 Adımlı Doğrulama</h1>
+      <p>{{ phone }} — SMS kodu doğrulandı, şimdi Telegram şifreni gir</p>
+    </div>
+
+    <div class="card" style="max-width:480px">
+
+      <div class="alert" style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);margin-bottom:1.5rem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" style="width:16px;height:16px;flex-shrink:0"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>Bu Telegram'ın <b>2 Adımlı Doğrulama</b> şifresidir — SMS kodu değil.</span>
+      </div>
+
+      {% if error %}
+      <div class="alert" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);margin-bottom:1rem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span style="color:#f87171">{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form action="/accounts/verify-2fa" method="POST">
+        <input type="hidden" name="phone" value="{{ phone }}">
+
+        <div class="field">
+          <label>Telegram Şifresi</label>
+          <input type="password" name="password" id="password" placeholder="••••••••"
+                 autofocus
+                 style="font-size:1.3rem;letter-spacing:.3rem;text-align:center">
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg btn-block mt-2">
+          🔓 Şifreyi Doğrula ve Giriş Yap
+        </button>
+      </form>
+
+      <div style="text-align:center;margin-top:1rem">
+        <a href="/accounts/ekle" style="color:var(--muted2);font-size:.85rem;text-decoration:none">
+          ← İptal et ve başa dön
+        </a>
+      </div>
+    </div>
+
+    {% else %}
+    <!-- ══ SMS KOD ADIMI ══ -->
     <div class="main-header">
       <h1>📲 SMS Kodu Doğrula</h1>
       <p>{{ phone }} numarasına SMS gönderdik</p>
@@ -34,6 +80,13 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span>Telegramdan gelen <b>5 haneli kodu</b> gir. Birkaç saniye içinde gelir.</span>
       </div>
+
+      {% if error %}
+      <div class="alert" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);margin-bottom:1rem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span style="color:#f87171">{{ error }}</span>
+      </div>
+      {% endif %}
 
       <form action="/accounts/verify" method="POST">
         <input type="hidden" name="phone" value="{{ phone }}">
@@ -56,6 +109,8 @@
         </a>
       </div>
     </div>
+    {% endif %}
+
   </main>
 </div>
 </body>

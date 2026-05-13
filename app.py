@@ -290,26 +290,53 @@ async def backfill_mappings(client: TelegramClient, account: Account, limit: int
 
 async def start_client(account: Account):
     global clients
+
+    # — Zaten bağlıysa tekrar başlatma (duplicate event handler önle) —
+    if account.id in clients:
+        existing = clients[account.id]
+        if existing.is_connected():
+            print(f"[{account.name}] Zaten bağlı, atlanıyor.")
+            return
+        else:
+            # Kopuk client varsa temizle
+            try:
+                await existing.disconnect()
+            except Exception:
+                pass
+            del clients[account.id]
+
     print(f"[{account.name}] Başlatılıyor...")
     client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
-    
+
     try:
-        # 30 saniye timeout ekle ki startup kilitlenmesin
         await asyncio.wait_for(client.connect(), timeout=30)
+    except asyncio.TimeoutError:
+        print(f"[{account.name}] Bağlantı zaman aşıldı.")
+        return
     except Exception as e:
         print(f"[{account.name}] Bağlantı hatası: {e}")
         return
 
-    if not await client.is_user_authorized():
-        print(f"[{account.name}] Yetkilendirme hatası! Lütfen tekrar giriş yapın.")
-        # DB'de is_active=False yap ki dashboard'da uyarı görünsün
+    try:
+        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
+    except asyncio.TimeoutError:
+        print(f"[{account.name}] Yetkilendirme kontrolü zaman aşıldı.")
+        await client.disconnect()
+        return
+    except Exception as e:
+        print(f"[{account.name}] Yetkilendirme hatası: {e}")
+        await client.disconnect()
+        return
+
+    if not authorized:
+        print(f"[{account.name}] Oturum geçersiz. Lütfen tekrar giriş yapın.")
         try:
-            db = SessionLocal()
-            acc_db = db.query(Account).filter(Account.id == account.id).first()
+            db2 = SessionLocal()
+            acc_db = db2.query(Account).filter(Account.id == account.id).first()
             if acc_db:
                 acc_db.is_active = False
-                db.commit()
-            db.close()
+                db2.commit()
+            db2.close()
         except Exception:
             pass
         await client.disconnect()
@@ -868,35 +895,119 @@ async def verify_code(
     uid = (user.id if user else None) or saved_uid
 
     try:
-        await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
-        await client.disconnect()
-
-        # Zaten kayıtlı mı kontrol et
-        exists = db.query(Account).filter(Account.phone == phone).first()
-        if exists:
-            if uid and exists.user_id is None:
-                exists.user_id = uid
-                db.commit()
-            if exists.id not in clients:
-                asyncio.create_task(start_client(exists))
-        else:
-            new_acc = Account(
-                user_id=uid,
-                name=name,
-                phone=phone,
-                api_id=api_id,
-                api_hash=api_hash,
-                session_file=session_file
-            )
-            db.add(new_acc)
-            db.commit()
-            asyncio.create_task(start_client(new_acc))
-
-        del login_sessions[phone]
-        return RedirectResponse(url="/", status_code=303)
+        await asyncio.wait_for(
+            client.sign_in(phone, code, phone_code_hash=phone_code_hash),
+            timeout=20
+        )
+    except SessionPasswordNeededError:
+        # 2FA şifresi gerekiyor — client hala login_sessions'ta, 2FA sayfasina yönlendir
+        print(f"[Phone] 2FA gerekli: {phone}")
+        return RedirectResponse(
+            url=f"/accounts/verify-2fa?phone={phone.replace('+', '%2B')}",
+            status_code=303
+        )
+    except asyncio.TimeoutError:
+        return RedirectResponse(url=f"/accounts/verify?phone={phone}&error=timeout", status_code=303)
     except Exception as e:
         print(f"Dogrulama hatasi: {e}")
         return RedirectResponse(url=f"/accounts/verify?phone={phone}", status_code=303)
+
+    # 2FA yoksa başarılı — session'u kaydet
+    try:
+        client.session.save()
+        await client.disconnect()
+    except Exception:
+        pass
+    await asyncio.sleep(3)
+
+    exists = db.query(Account).filter(Account.phone == phone).first()
+    if exists:
+        if uid and exists.user_id is None:
+            exists.user_id = uid
+            db.commit()
+        if exists.id not in clients:
+            asyncio.create_task(start_client(exists))
+    else:
+        new_acc = Account(
+            user_id=uid, name=name, phone=phone,
+            api_id=api_id, api_hash=api_hash, session_file=session_file
+        )
+        db.add(new_acc)
+        db.commit()
+        asyncio.create_task(start_client(new_acc))
+
+    del login_sessions[phone]
+    return RedirectResponse(url="/", status_code=303)
+
+
+@app.get("/accounts/verify-2fa", response_class=HTMLResponse)
+async def verify_2fa_form(request: Request, phone: str, error: str = None):
+    return templates.TemplateResponse(
+        request=request, name="verify.html",
+        context={"phone": phone, "step": "2fa", "error": error}
+    )
+
+
+@app.post("/accounts/verify-2fa")
+async def verify_2fa_code(
+    request: Request,
+    phone: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    if phone not in login_sessions:
+        return RedirectResponse(url="/accounts/add", status_code=303)
+
+    session_data = login_sessions[phone]
+    if len(session_data) == 7:
+        client, phone_code_hash, name, api_id, api_hash, session_file, saved_uid = session_data
+    else:
+        client, phone_code_hash, name, api_id, api_hash, session_file = session_data
+        saved_uid = None
+
+    user = get_current_user(request, db)
+    uid = (user.id if user else None) or saved_uid
+
+    try:
+        await asyncio.wait_for(client.sign_in(password=password), timeout=20)
+    except asyncio.TimeoutError:
+        return RedirectResponse(
+            url=f"/accounts/verify-2fa?phone={phone.replace('+', '%2B')}&error=Zaman+asimi",
+            status_code=303
+        )
+    except Exception as e:
+        err_msg = "Şifre hatalı" if "PASSWORD_HASH_INVALID" in str(e) or "invalid" in str(e).lower() else str(e)
+        return RedirectResponse(
+            url=f"/accounts/verify-2fa?phone={phone.replace('+', '%2B')}&error={err_msg}",
+            status_code=303
+        )
+
+    # Başarılı — session'u kaydet
+    try:
+        client.session.save()
+        await client.disconnect()
+    except Exception:
+        pass
+    await asyncio.sleep(2)
+
+    exists = db.query(Account).filter(Account.phone == phone).first()
+    if exists:
+        if uid and exists.user_id is None:
+            exists.user_id = uid
+            db.commit()
+        if exists.id not in clients:
+            asyncio.create_task(start_client(exists))
+    else:
+        new_acc = Account(
+            user_id=uid, name=name, phone=phone,
+            api_id=api_id, api_hash=api_hash, session_file=session_file
+        )
+        db.add(new_acc)
+        db.commit()
+        asyncio.create_task(start_client(new_acc))
+
+    del login_sessions[phone]
+    return RedirectResponse(url="/", status_code=303)
 
 @app.post("/accounts/{account_id}/delete")
 async def delete_account(account_id: int, db: Session = Depends(get_db)):
