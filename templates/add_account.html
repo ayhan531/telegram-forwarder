@@ -94,12 +94,14 @@
             <input type="text" id="qr-name" placeholder="Örn: Ahmet, Bot1, Ana Hesap">
           </div>
           <div class="field">
-            <label>API ID <span class="text-muted">— <a href="https://my.telegram.org/auth" target="_blank" style="color:var(--primary)">my.telegram.org'dan al</a></span></label>
-            <input type="text" id="qr-api-id" placeholder="12345678">
+            <label>API ID <span class="text-muted">— <a href="https://my.telegram.org/auth" target="_blank" style="color:var(--primary)">my.telegram.org'dan al</a></span>
+              <span id="api-saved-badge" style="display:none;margin-left:.5rem;font-size:.7rem;background:rgba(74,222,128,.15);color:#4ade80;border:1px solid rgba(74,222,128,.3);border-radius:6px;padding:.1rem .45rem;font-weight:600">🔒 Kaydedildi</span>
+            </label>
+            <input type="text" id="qr-api-id" placeholder="12345678" oninput="saveApiCreds()">
           </div>
           <div class="field">
-            <label>API Hash</label>
-            <input type="text" id="qr-api-hash" placeholder="abc123def456...">
+            <label>API Hash <button type="button" onclick="clearApiCreds()" style="float:right;font-size:.7rem;background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0">❌ Temizle</button></label>
+            <input type="text" id="qr-api-hash" placeholder="abc123def456..." oninput="saveApiCreds()">
           </div>
           <button class="btn btn-primary btn-lg btn-block" onclick="startQR()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:18px;height:18px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
@@ -168,11 +170,11 @@
         </div>
         <div class="field">
           <label>API ID — <a href="https://my.telegram.org/auth" target="_blank" style="color:var(--primary)">nereden alırım?</a></label>
-          <input type="text" name="api_id" required>
+          <input type="text" name="api_id" id="phone-api-id" required oninput="saveApiCreds()">
         </div>
         <div class="field">
           <label>API Hash</label>
-          <input type="text" name="api_hash" required>
+          <input type="text" name="api_hash" id="phone-api-hash" required oninput="saveApiCreds()">
         </div>
         <button type="submit" class="btn btn-primary btn-lg btn-block mt-2">
           Doğrulama Kodu Gönder →
@@ -214,6 +216,44 @@
 </div>
 
 <script>
+/* ── API Credentials Memory (localStorage) ── */
+function loadApiCreds() {
+  const id   = localStorage.getItem('tg_api_id')   || '';
+  const hash = localStorage.getItem('tg_api_hash') || '';
+  if (id) {
+    document.getElementById('qr-api-id').value    = id;
+    document.getElementById('qr-api-hash').value  = hash;
+    document.getElementById('phone-api-id').value  = id;
+    document.getElementById('phone-api-hash').value = hash;
+    document.getElementById('api-saved-badge').style.display = 'inline';
+  }
+}
+function saveApiCreds() {
+  const id   = document.getElementById('qr-api-id').value.trim()
+            || document.getElementById('phone-api-id').value.trim();
+  const hash = document.getElementById('qr-api-hash').value.trim()
+            || document.getElementById('phone-api-hash').value.trim();
+  if (id && hash) {
+    localStorage.setItem('tg_api_id',   id);
+    localStorage.setItem('tg_api_hash', hash);
+    // Diğer formu da doldur
+    document.getElementById('qr-api-id').value     = id;
+    document.getElementById('qr-api-hash').value   = hash;
+    document.getElementById('phone-api-id').value  = id;
+    document.getElementById('phone-api-hash').value = hash;
+    document.getElementById('api-saved-badge').style.display = 'inline';
+  }
+}
+function clearApiCreds() {
+  localStorage.removeItem('tg_api_id');
+  localStorage.removeItem('tg_api_hash');
+  ['qr-api-id','qr-api-hash','phone-api-id','phone-api-hash'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('api-saved-badge').style.display = 'none';
+}
+loadApiCreds();
+
 /* ── Method tabs ── */
 function selectMethod(id, el) {
   document.querySelectorAll('.method-tab').forEach(t => t.classList.remove('selected'));
