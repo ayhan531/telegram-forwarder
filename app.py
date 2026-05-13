@@ -629,12 +629,16 @@ async def _finalize_qr_session(temp_id: str):
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if raw_phone and not str(raw_phone).startswith("+") else str(raw_phone)
 
-        # Session diske yazılsın
+        # Session diske yazılsın — önce manuel save, sonra disconnect
+        try:
+            client.session.save()          # WAL → main DB'ye yaz
+        except Exception:
+            pass
         try:
             await client.disconnect()
         except Exception:
             pass
-        await asyncio.sleep(1)
+        await asyncio.sleep(3)            # SQLite WAL checkpoint için yeterli süre
 
         db = SessionLocal()
         try:
