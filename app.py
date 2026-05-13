@@ -672,13 +672,23 @@ async def qr_start(
 
     session_file = os.path.join(_DATA_DIR, f"{user.username}_{name.replace(' ', '_')}.session")
     client = TelegramClient(session_file, int(api_id), api_hash)
-    await client.connect()
+    try:
+        await asyncio.wait_for(client.connect(), timeout=20)
+    except asyncio.TimeoutError:
+        return JSONResponse({"error": "Telegram sunucusuna bağlanma zaman aşıldı. Lütfen tekrar dene."}, status_code=408)
+    except Exception as e:
+        return JSONResponse({"error": f"Bağlantı hatası: {e}"}, status_code=400)
 
-    if await client.is_user_authorized():
-        me = await client.get_me()
+    try:
+        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=10)
+    except asyncio.TimeoutError:
+        await client.disconnect()
+        return JSONResponse({"error": "Yetkilendirme kontrolü zaman aşıldı."}, status_code=408)
+
+    if authorized:
+        me = await asyncio.wait_for(client.get_me(), timeout=10)
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if not str(raw_phone).startswith("+") else str(raw_phone)
-        # Disconnect önce: session dosyası kilitlenmeden start_client okusun
         await client.disconnect()
         await asyncio.sleep(0.5)
         db2 = SessionLocal()
@@ -700,7 +710,10 @@ async def qr_start(
         return JSONResponse({"status": "already_authorized"})
 
     try:
-        qr_login = await client.qr_login()
+        qr_login = await asyncio.wait_for(client.qr_login(), timeout=15)
+    except asyncio.TimeoutError:
+        await client.disconnect()
+        return JSONResponse({"error": "QR oluşturma zaman aşıldı. Tekrar dene."}, status_code=408)
     except Exception as e:
         await client.disconnect()
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -758,9 +771,22 @@ async def send_code(
     user = get_current_user(request, db)
     session_file = os.path.join(_DATA_DIR, f"{name}.session")
     client = TelegramClient(session_file, int(api_id), api_hash)
-    await client.connect()
+    try:
+        await asyncio.wait_for(client.connect(), timeout=20)
+    except asyncio.TimeoutError:
+        return RedirectResponse(url=f"/accounts/verify?phone={phone.replace('+', '%2B')}&error=timeout", status_code=303)
+    except Exception as e:
+        return RedirectResponse(url=f"/accounts/add?error={str(e)}", status_code=303)
 
-    result = await client.send_code_request(phone)
+    try:
+        result = await asyncio.wait_for(client.send_code_request(phone), timeout=20)
+    except asyncio.TimeoutError:
+        await client.disconnect()
+        return RedirectResponse(url=f"/accounts/add?error=Telegram+kodu+gonderme+zaman+asimi", status_code=303)
+    except Exception as e:
+        await client.disconnect()
+        return RedirectResponse(url=f"/accounts/add?error={str(e)}", status_code=303)
+
     login_sessions[phone] = (client, result.phone_code_hash, name, api_id, api_hash, session_file, user.id if user else None)
 
     return RedirectResponse(url=f"/accounts/verify?phone={phone.replace('+', '%2B')}", status_code=303)
