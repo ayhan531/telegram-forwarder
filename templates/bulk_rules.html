@@ -125,10 +125,15 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
           Hesap → Kişi Eşleştirmeleri
         </div>
-        <button class="btn btn-secondary" onclick="addRow()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg>
-          Satır Ekle
-        </button>
+        <div class="flex gap-2">
+          <button class="btn btn-secondary" style="background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:#c4b5fd" onclick="openMsgFinder()">
+            📎 Mesajdan Kişi Bul
+          </button>
+          <button class="btn btn-secondary" onclick="addRow()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><path d="M12 5v14M5 12h14"/></svg>
+            Satır Ekle
+          </button>
+        </div>
       </div>
 
       <div class="alert alert-info" style="margin-bottom:1rem">
@@ -199,6 +204,36 @@
       <button class="btn btn-secondary" onclick="closeModal()">İptal</button>
       <button class="btn btn-primary" id="btnSearch" onclick="doSearch()">🔎 Ara</button>
       <button class="btn btn-success" id="btnUse" style="display:none" onclick="useResult()">✅ Kullan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MESAJ LİNKİNDEN KİŞİ BUL MODAL ── -->
+<div class="modal-overlay" id="msgFinderModal">
+  <div class="modal">
+    <div class="modal-title">📎 Mesaj Linkinden Kişi Bul</div>
+    <div class="modal-sub">İsim gizleyen veya anonim admin için: o kişinin yazdığı mesajın linkini yapıştır</div>
+
+    <div class="field" style="margin-bottom:.75rem">
+      <label style="font-size:.75rem">Aramak için hangi hesabı kullanalım?</label>
+      <select id="msgFinderAccount" class="row-select">
+        {% for acc in accounts %}
+        <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field">
+      <input class="row-input w-full" id="msgFinderInput" type="text"
+             placeholder="https://t.me/grupadi/123">
+    </div>
+
+    <div id="msgFinderResult" style="display:none;margin-top:.5rem"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeMsgFinder()">İptal</button>
+      <button class="btn btn-primary" id="btnMsgFind" onclick="doMsgFind()">🔎 Bul</button>
+      <button class="btn btn-success" id="btnMsgUse" style="display:none" onclick="copyMsgResult()">📋 Kopyala</button>
     </div>
   </div>
 </div>
@@ -373,6 +408,66 @@ document.getElementById('finderInput').addEventListener('keydown', e => { if(e.k
 document.getElementById('finderModal').addEventListener('click', e => {
   if (e.target.id === 'finderModal') closeModal();
 });
+
+/* ─── Msg Finder ─── */
+let _msgFoundId = null;
+function openMsgFinder() {
+  _msgFoundId = null;
+  document.getElementById('msgFinderInput').value = '';
+  document.getElementById('msgFinderResult').style.display = 'none';
+  document.getElementById('btnMsgUse').style.display = 'none';
+  document.getElementById('msgFinderModal').classList.add('open');
+  setTimeout(() => document.getElementById('msgFinderInput').focus(), 80);
+}
+function closeMsgFinder() { document.getElementById('msgFinderModal').classList.remove('open'); }
+
+async function doMsgFind() {
+  const link = document.getElementById('msgFinderInput').value.trim();
+  const accId = document.getElementById('msgFinderAccount').value;
+  if (!link || !accId) return;
+
+  const btn = document.getElementById('btnMsgFind');
+  btn.innerHTML = '<span class="spin"></span> Aranıyor...'; btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('message_link', link); fd.append('account_id', accId);
+
+  try {
+    const res = await fetch('/find-sender', { method: 'POST', body: fd });
+    const d = await res.json();
+    const box = document.getElementById('msgFinderResult');
+    box.style.display = 'block';
+
+    if (d.error) {
+      box.innerHTML = `<div style="color:var(--danger);font-size:.85rem">❌ ${d.error}</div>`;
+      document.getElementById('btnMsgUse').style.display = 'none';
+    } else {
+      _msgFoundId = d.id;
+      const uname = d.username ? ` · @${d.username}` : '';
+      box.innerHTML = `
+        <div style="background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.2);padding:.8rem;border-radius:8px">
+          <div style="font-weight:700;font-size:.9rem">${d.name}${uname}</div>
+          <div style="font-family:monospace;font-size:.8rem;color:var(--primary);margin-top:.2rem">ID: ${d.id}</div>
+          ${d.note ? `<div style="font-size:.75rem;color:#fbbf24;margin-top:.4rem">${d.note}</div>` : ''}
+        </div>`;
+      document.getElementById('btnMsgUse').style.display = '';
+    }
+  } catch(e) { alert('Hata: ' + e); }
+  finally { btn.innerHTML = '🔎 Bul'; btn.disabled = false; }
+}
+
+function copyMsgResult() {
+  if (!_msgFoundId) return;
+  navigator.clipboard.writeText(_msgFoundId);
+  const btn = document.getElementById('btnMsgUse');
+  const oldText = btn.innerHTML;
+  btn.innerHTML = '✅ Kopyalandı!';
+  setTimeout(() => { btn.innerHTML = oldText; }, 2000);
+}
+
+document.getElementById('msgFinderInput').addEventListener('keydown', e => { if(e.key==='Enter') doMsgFind(); });
+document.getElementById('msgFinderModal').addEventListener('click', e => { if(e.target.id === 'msgFinderModal') closeMsgFinder(); });
+
 
 /* Başlangıçta 3 boş satır */
 addRow(); addRow(); addRow();
