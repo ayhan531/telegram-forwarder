@@ -17,9 +17,42 @@ import qrcode
 import database
 from database import SessionLocal, Rule, Account, MessageMapping, WordFilter, User, hash_password
 
+from contextlib import asynccontextmanager
+
 load_dotenv()
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Uygulama başlangıç ve bitiş olayları."""
+    print("[System] Uygulama başlatılıyor...")
+    try:
+        database.init_db()
+        print("[System] Veritabanı hazır.")
+    except Exception as e:
+        print(f"[System] Veritabanı başlatma hatası: {e}")
+
+    db = SessionLocal()
+    try:
+        accounts = db.query(Account).filter(Account.is_active == True).all()
+        print(f"[System] {len(accounts)} aktif hesap başlatılıyor...")
+        for account in accounts:
+            asyncio.create_task(start_client(account))
+    except Exception as e:
+        print(f"[System] Hesap başlatma hatası: {e}")
+    finally:
+        db.close()
+
+    yield  # Uygulama burada çalışır
+
+    # Shutdown: tüm client'ları kapat
+    print("[System] Kapatılıyor...")
+    for client in list(clients.values()):
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
+app = FastAPI(lifespan=lifespan)
 _SECRET = os.environ.get("SESSION_SECRET", "tg-forwarder-secret-2026")
 _DATA_DIR = os.environ.get("DATA_DIR", ".")
 app.add_middleware(SessionMiddleware, secret_key=_SECRET, max_age=86400 * 7)
@@ -467,27 +500,6 @@ async def start_client(account: Account):
             db.close()
 
     print(f"[{account.name}] Aktif ve dinliyor.")
-
-
-@app.on_event("startup")
-async def startup_event():
-    print("[System] Uygulama başlatılıyor...")
-    try:
-        database.init_db()
-        print("[System] Veritabanı hazır.")
-    except Exception as e:
-        print(f"[System] Veritabanı başlatma hatası: {e}")
-
-    db = SessionLocal()
-    try:
-        accounts = db.query(Account).filter(Account.is_active == True).all()
-        print(f"[System] {len(accounts)} aktif hesap başlatılıyor...")
-        for account in accounts:
-            asyncio.create_task(start_client(account))
-    except Exception as e:
-        print(f"[System] Hesap başlatma hatası: {e}")
-    finally:
-        db.close()
 
 # ── LOGIN / LOGOUT ──
 
