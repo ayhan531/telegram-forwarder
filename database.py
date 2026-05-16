@@ -82,6 +82,7 @@ class WordFilter(Base):
 class MessageMapping(Base):
     __tablename__ = "message_mappings"
     id                  = Column(Integer, primary_key=True, index=True)
+    account_id          = Column(Integer, nullable=True, index=True)  # hangi hesap iletti
     original_chat_id    = Column(String, index=True)
     original_msg_id     = Column(Integer, index=True)
     destination_chat_id = Column(String, index=True)
@@ -97,6 +98,7 @@ def init_db():
     _migrations = [
         "ALTER TABLE message_mappings ADD COLUMN last_reactions TEXT DEFAULT ''",
         "ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)",
+        "ALTER TABLE message_mappings ADD COLUMN account_id INTEGER",
     ]
     for _sql in _migrations:
         try:

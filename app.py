@@ -168,6 +168,7 @@ async def reaction_poll_loop(client: TelegramClient, account: Account, interval:
                                 continue
 
                             mapping = db.query(MessageMapping).filter(
+                                MessageMapping.account_id          == account.id,
                                 MessageMapping.original_chat_id    == rule.source_chat_id,
                                 MessageMapping.original_msg_id     == msg.id,
                                 MessageMapping.destination_chat_id == rule.destination_id
@@ -179,6 +180,7 @@ async def reaction_poll_loop(client: TelegramClient, account: Account, interval:
                                 db = SessionLocal()
                                 await backfill_mappings(client, account, limit=100)
                                 mapping = db.query(MessageMapping).filter(
+                                    MessageMapping.account_id          == account.id,
                                     MessageMapping.original_chat_id    == rule.source_chat_id,
                                     MessageMapping.original_msg_id     == msg.id,
                                     MessageMapping.destination_chat_id == rule.destination_id
@@ -284,10 +286,11 @@ async def backfill_mappings(client: TelegramClient, account: Account, limit: int
 
                     if forwarded_id:
                         new_map = MessageMapping(
-                            original_chat_id   = src_id,
-                            original_msg_id    = sm.id,
-                            destination_chat_id= dst_id,
-                            forwarded_msg_id   = forwarded_id
+                            account_id          = account.id,
+                            original_chat_id    = src_id,
+                            original_msg_id     = sm.id,
+                            destination_chat_id = dst_id,
+                            forwarded_msg_id    = forwarded_id
                         )
                         db.add(new_map)
                         mapped_count += 1
@@ -375,108 +378,118 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
         sender_id = str(sender.id) if sender else None
 
         db = SessionLocal()
-        rules = db.query(Rule).filter(
-            Rule.source_chat_id == chat_id,
-            Rule.account_id == account.id,
-            Rule.is_active == True
-        ).all()
-        
-        for rule in rules:
-            if rule.sender_id and rule.sender_id != sender_id:
-                continue
+        try:
+            rules = db.query(Rule).filter(
+                Rule.source_chat_id == chat_id,
+                Rule.account_id == account.id,
+                Rule.is_active == True
+            ).all()
 
-            # ── Yanıt (reply) eşleştirmesi ──
-            reply_to_msg_id = None
-            if event.is_reply:
-                reply_msg = await event.get_reply_message()
-                if reply_msg:
-                    mapping = db.query(MessageMapping).filter(
-                        MessageMapping.original_chat_id == chat_id,
-                        MessageMapping.original_msg_id == reply_msg.id,
-                        MessageMapping.destination_chat_id == rule.destination_id
-                    ).first()
-                    if mapping:
-                        reply_to_msg_id = mapping.forwarded_msg_id
+            for rule in rules:
+                if rule.sender_id and rule.sender_id != sender_id:
+                    continue
 
-            # ── Kelime filtresi uygula ──
-            caption = event.message.message or ""
-            for f in rule.filters:
-                replace_str = f.replace_word if f.replace_word else ""
-                caption = caption.replace(f.search_word, replace_str)
+                # ── Yanıt (reply) eşleştirmesi ──
+                reply_to_msg_id = None
+                if event.is_reply:
+                    reply_msg = await event.get_reply_message()
+                    if reply_msg:
+                        # Bu hesaba ait mapping'i ara
+                        mapping = db.query(MessageMapping).filter(
+                            MessageMapping.account_id == account.id,
+                            MessageMapping.original_chat_id == chat_id,
+                            MessageMapping.original_msg_id == reply_msg.id,
+                            MessageMapping.destination_chat_id == rule.destination_id
+                        ).first()
+                        # Eski veri (account_id yok) için fallback
+                        if not mapping:
+                            mapping = db.query(MessageMapping).filter(
+                                MessageMapping.account_id == None,
+                                MessageMapping.original_chat_id == chat_id,
+                                MessageMapping.original_msg_id == reply_msg.id,
+                                MessageMapping.destination_chat_id == rule.destination_id
+                            ).first()
+                        if mapping:
+                            reply_to_msg_id = mapping.forwarded_msg_id
 
-            try:
-                sent_msg = None
-                media = event.message.media
+                # ── Kelime filtresi uygula ──
+                caption = event.message.message or ""
+                for f in rule.filters:
+                    replace_str = f.replace_word if f.replace_word else ""
+                    caption = caption.replace(f.search_word, replace_str)
 
-                if media:
-                    # ── Medya türünü tespit et ──
-                    is_voice      = False
-                    is_video_note = False
-                    is_sticker    = False
-                    is_photo      = isinstance(media, types.MessageMediaPhoto)
-                    filename      = None
+                try:
+                    sent_msg = None
+                    media = event.message.media
 
-                    if isinstance(media, types.MessageMediaDocument):
-                        doc = media.document
-                        for attr in getattr(doc, "attributes", []):
-                            if isinstance(attr, types.DocumentAttributeAudio) and getattr(attr, "voice", False):
-                                is_voice = True
-                            if isinstance(attr, types.DocumentAttributeVideo) and getattr(attr, "round_message", False):
-                                is_video_note = True
-                            if isinstance(attr, types.DocumentAttributeSticker):
-                                is_sticker = True
-                            if isinstance(attr, types.DocumentAttributeFilename):
-                                filename = attr.file_name  # orijinal dosya adını koru
+                    if media:
+                        is_voice      = False
+                        is_video_note = False
+                        is_sticker    = False
+                        is_photo      = isinstance(media, types.MessageMediaPhoto)
+                        filename      = None
 
-                    # ── Medyayı indir ──
-                    buf = io.BytesIO()
-                    if filename:
-                        buf.name = filename  # Telethon bu ismi yükleme sırasında kullanır
-                    elif is_voice:
-                        buf.name = "voice.ogg"   # Voice note → Telegram ogg kullanır
-                    elif is_video_note:
-                        buf.name = "video_note.mp4"
-                    elif is_photo:
-                        buf.name = "photo.jpg"
-                    await client.download_media(event.message, file=buf)
-                    buf.seek(0)
+                        if isinstance(media, types.MessageMediaDocument):
+                            doc = media.document
+                            for attr in getattr(doc, "attributes", []):
+                                if isinstance(attr, types.DocumentAttributeAudio) and getattr(attr, "voice", False):
+                                    is_voice = True
+                                if isinstance(attr, types.DocumentAttributeVideo) and getattr(attr, "round_message", False):
+                                    is_video_note = True
+                                if isinstance(attr, types.DocumentAttributeSticker):
+                                    is_sticker = True
+                                if isinstance(attr, types.DocumentAttributeFilename):
+                                    filename = attr.file_name
 
-                    send_kwargs = dict(
-                        entity=int(rule.destination_id),
-                        file=buf,
-                        reply_to=reply_to_msg_id,
-                        voice_note=is_voice,
-                        video_note=is_video_note,
-                    )
-                    # Sticker ve ses kaydına caption eklenmez
-                    if not is_voice and not is_video_note and not is_sticker:
-                        send_kwargs["caption"] = caption
+                        buf = io.BytesIO()
+                        if filename:
+                            buf.name = filename
+                        elif is_voice:
+                            buf.name = "voice.ogg"
+                        elif is_video_note:
+                            buf.name = "video_note.mp4"
+                        elif is_photo:
+                            buf.name = "photo.jpg"
+                        await client.download_media(event.message, file=buf)
+                        buf.seek(0)
 
-                    sent_msg = await client.send_file(**send_kwargs)
-
-                else:
-                    # ── Saf metin mesajı ──
-                    if caption:
-                        sent_msg = await client.send_message(
-                            int(rule.destination_id),
-                            message=caption,
-                            reply_to=reply_to_msg_id
+                        send_kwargs = dict(
+                            entity=int(rule.destination_id),
+                            file=buf,
+                            reply_to=reply_to_msg_id,
+                            voice_note=is_voice,
+                            video_note=is_video_note,
                         )
+                        if not is_voice and not is_video_note and not is_sticker:
+                            send_kwargs["caption"] = caption
 
-                if sent_msg:
-                    new_mapping = MessageMapping(
-                        original_chat_id=chat_id,
-                        original_msg_id=event.id,
-                        destination_chat_id=rule.destination_id,
-                        forwarded_msg_id=sent_msg.id
-                    )
-                    db.add(new_mapping)
-                    db.commit()
-                    print(f"[{account.name}] ✅ İletildi: {chat_id} msg={event.id} → {rule.destination_id} msg={sent_msg.id}")
+                        sent_msg = await client.send_file(**send_kwargs)
 
-            except Exception as e:
-                print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {e}")
-        db.close()
+                    else:
+                        if caption:
+                            sent_msg = await client.send_message(
+                                int(rule.destination_id),
+                                message=caption,
+                                reply_to=reply_to_msg_id
+                            )
+
+                    if sent_msg:
+                        new_mapping = MessageMapping(
+                            account_id=account.id,
+                            original_chat_id=chat_id,
+                            original_msg_id=event.id,
+                            destination_chat_id=rule.destination_id,
+                            forwarded_msg_id=sent_msg.id
+                        )
+                        db.add(new_mapping)
+                        db.commit()
+                        print(f"[{account.name}] ✅ İletildi: {chat_id} msg={event.id} → {rule.destination_id} msg={sent_msg.id}")
+
+                except Exception as e:
+                    print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {e}")
+        finally:
+            db.close()
+
 
     @client.on(events.Raw)
     async def raw_handler(update):
