@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import base64
 import uuid
 import asyncio
@@ -79,6 +80,9 @@ clients = {}
 login_sessions = {}
 # QR login sessions: temp_id -> dict
 qr_sessions = {}
+
+# URL tespit regex — http/https ve www. ile baslayan linkleri bulur
+_URL_RE = re.compile(r'https?://[^\s]+|www\.[^\s]+', re.IGNORECASE)
 
 def get_db():
     db = SessionLocal()
@@ -417,6 +421,15 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 for f in rule.filters:
                     replace_str = f.replace_word if f.replace_word else ""
                     caption = caption.replace(f.search_word, replace_str)
+
+                # ── Link kontrol ──
+                has_links = bool(_URL_RE.search(caption))
+                if rule.block_links and has_links:
+                    print(f"[{account.name}] 🔗 Linkli mesaj engellendi (msg={event.id})")
+                    continue
+                if rule.replace_link and has_links:
+                    caption = _URL_RE.sub(rule.replace_link, caption)
+                    print(f"[{account.name}] 🔗 Link degistirildi → {rule.replace_link} (msg={event.id})")
 
                 try:
                     sent_msg = None
@@ -1145,6 +1158,23 @@ async def add_filter(
     db.add(new_filter)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
+
+@app.post("/rules/{rule_id}/link-settings")
+async def update_rule_links(
+    rule_id: int,
+    block_links: bool = Form(False),
+    replace_link: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if rule:
+        rule.block_links = block_links
+        # if replace_link is provided, block_links must be false since it doesn't make sense to block and replace. 
+        # But UI should handle this. Let's just save whatever is sent.
+        rule.replace_link = replace_link if replace_link else None
+        db.commit()
+    return RedirectResponse(url="/", status_code=303)
+
 
 @app.post("/filters/{filter_id}/delete")
 async def delete_filter(filter_id: int, db: Session = Depends(get_db)):

@@ -64,6 +64,8 @@ class Rule(Base):
     destination_id = Column(String)
     is_active      = Column(Boolean, default=True)
     description    = Column(String, nullable=True)
+    block_links    = Column(Boolean, default=False)   # linkli mesajlari engelle
+    replace_link   = Column(String, nullable=True)    # linkleri bununla degistir
 
     account = relationship("Account",    back_populates="rules")
     filters = relationship("WordFilter", back_populates="rule", cascade="all, delete-orphan")
@@ -99,6 +101,8 @@ def init_db():
         "ALTER TABLE message_mappings ADD COLUMN last_reactions TEXT DEFAULT ''",
         "ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id)",
         "ALTER TABLE message_mappings ADD COLUMN account_id INTEGER",
+        "ALTER TABLE rules ADD COLUMN block_links BOOLEAN DEFAULT 0",
+        "ALTER TABLE rules ADD COLUMN replace_link TEXT",
     ]
     for _sql in _migrations:
         try:
