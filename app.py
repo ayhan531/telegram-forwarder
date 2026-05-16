@@ -25,7 +25,19 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Uygulama başlangıç ve bitiş olayları."""
-    print("[System] Uygulama başlatılıyor...")
+    import database as _db_module
+    data_dir = os.environ.get("DATA_DIR", ".")
+    db_path  = os.path.join(data_dir, "telegram_forwarder.db")
+    disk_ok  = os.path.isdir(data_dir) and os.access(data_dir, os.W_OK)
+
+    print(f"[System] Uygulama başlatılıyor...")
+    print(f"[System] DATA_DIR  = {data_dir}")
+    print(f"[System] DB path   = {db_path}")
+    print(f"[System] Disk OK   = {disk_ok}  ← False ise Render'da disk takılı değil!")
+    if not disk_ok:
+        print("[System] ⚠️  UYARI: Veri dizini yazılabilir değil. "
+              "Render Dashboard → Disks → /data eklendiğinden emin ol!")
+
     try:
         database.init_db()
         print("[System] Veritabanı hazır.")
@@ -42,6 +54,7 @@ async def lifespan(app: FastAPI):
         print(f"[System] Hesap başlatma hatası: {e}")
     finally:
         db.close()
+
 
     yield  # Uygulama burada çalışır
 
