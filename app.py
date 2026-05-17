@@ -748,6 +748,11 @@ async def qr_start(
     if not user:
         return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
 
+    # Check if name is already used
+    existing_acc = db.query(Account).filter(Account.user_id == user.id, Account.name == name).first()
+    if existing_acc:
+        return JSONResponse({"error": f"'{name}' isminde bir hesap zaten var. Lütfen farklı bir isim seçin."}, status_code=400)
+
     session_file = os.path.join(_DATA_DIR, f"{user.username}_{name.replace(' ', '_')}.session")
     client = TelegramClient(session_file, int(api_id), api_hash)
     try:
@@ -880,7 +885,14 @@ async def send_code(
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
-    session_file = os.path.join(_DATA_DIR, f"{name}.session")
+    
+    # Check if name is already used by this user
+    if user:
+        existing_acc = db.query(Account).filter(Account.user_id == user.id, Account.name == name).first()
+        if existing_acc:
+            return RedirectResponse(url=f"/accounts/add?error='{name}'+isminde+bir+hesap+zaten+var.+Lutfen+farkli+bir+isim+secin.", status_code=303)
+
+    session_file = os.path.join(_DATA_DIR, f"{user.username if user else 'anon'}_{name.replace(' ', '_')}.session")
     client = TelegramClient(session_file, int(api_id), api_hash)
     try:
         await asyncio.wait_for(client.connect(), timeout=20)
