@@ -395,6 +395,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
 
                 # ── Yanıt (reply) eşleştirmesi ──
                 reply_to_msg_id = None
+                reply_quote_text = ""
                 if event.is_reply:
                     reply_msg = await event.get_reply_message()
                     if reply_msg:
@@ -415,12 +416,27 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             ).first()
                         if mapping:
                             reply_to_msg_id = mapping.forwarded_msg_id
+                        else:
+                            # Yanıtlanan mesaj karşıya iletilmemiş! Fake alıntı ekleyelim.
+                            try:
+                                r_sender = await reply_msg.get_sender()
+                                r_name = getattr(r_sender, 'first_name', '') or getattr(r_sender, 'title', '') or 'Biri'
+                                r_text = reply_msg.message or "[Medya]"
+                                if len(r_text) > 80:
+                                    r_text = r_text[:80] + "..."
+                                reply_quote_text = f"💬 {r_name}:\n\"{r_text}\"\n\n"
+                            except Exception:
+                                pass
 
                 # ── Kelime filtresi uygula ──
                 caption = event.message.message or ""
                 for f in rule.filters:
                     replace_str = f.replace_word if f.replace_word else ""
                     caption = caption.replace(f.search_word, replace_str)
+
+                # Eğer sahte alıntı varsa mesajın başına ekle
+                if reply_quote_text:
+                    caption = reply_quote_text + caption
 
                 # ── Link kontrol ──
                 has_links = bool(_URL_RE.search(caption))
