@@ -1,6 +1,5 @@
 import os
 import io
-import re
 import base64
 import uuid
 import asyncio
@@ -12,62 +11,15 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from telethon import TelegramClient, events, functions, types
-from telethon.errors import SessionPasswordNeededError
 from dotenv import load_dotenv
 import qrcode
 
 import database
 from database import SessionLocal, Rule, Account, MessageMapping, WordFilter, User, hash_password
 
-from contextlib import asynccontextmanager
-
 load_dotenv()
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Uygulama başlangıç ve bitiş olayları."""
-    import database as _db_module
-    data_dir = os.environ.get("DATA_DIR", ".")
-    db_path  = os.path.join(data_dir, "telegram_forwarder.db")
-    disk_ok  = os.path.isdir(data_dir) and os.access(data_dir, os.W_OK)
-
-    print(f"[System] Uygulama başlatılıyor...")
-    print(f"[System] DATA_DIR  = {data_dir}")
-    print(f"[System] DB path   = {db_path}")
-    print(f"[System] Disk OK   = {disk_ok}  ← False ise Render'da disk takılı değil!")
-    if not disk_ok:
-        print("[System] ⚠️  UYARI: Veri dizini yazılabilir değil. "
-              "Render Dashboard → Disks → /data eklendiğinden emin ol!")
-
-    try:
-        database.init_db()
-        print("[System] Veritabanı hazır.")
-    except Exception as e:
-        print(f"[System] Veritabanı başlatma hatası: {e}")
-
-    db = SessionLocal()
-    try:
-        accounts = db.query(Account).filter(Account.is_active == True).all()
-        print(f"[System] {len(accounts)} aktif hesap başlatılıyor...")
-        for account in accounts:
-            asyncio.create_task(start_client(account))
-    except Exception as e:
-        print(f"[System] Hesap başlatma hatası: {e}")
-    finally:
-        db.close()
-
-
-    yield  # Uygulama burada çalışır
-
-    # Shutdown: tüm client'ları kapat
-    print("[System] Kapatılıyor...")
-    for client in list(clients.values()):
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 _SECRET = os.environ.get("SESSION_SECRET", "tg-forwarder-secret-2026")
 _DATA_DIR = os.environ.get("DATA_DIR", ".")
 app.add_middleware(SessionMiddleware, secret_key=_SECRET, max_age=86400 * 7)
@@ -80,9 +32,6 @@ clients = {}
 login_sessions = {}
 # QR login sessions: temp_id -> dict
 qr_sessions = {}
-
-# URL tespit regex — http/https ve www. ile baslayan linkleri bulur
-_URL_RE = re.compile(r'https?://[^\s]+|www\.[^\s]+', re.IGNORECASE)
 
 def get_db():
     db = SessionLocal()
@@ -172,7 +121,6 @@ async def reaction_poll_loop(client: TelegramClient, account: Account, interval:
                                 continue
 
                             mapping = db.query(MessageMapping).filter(
-                                MessageMapping.account_id          == account.id,
                                 MessageMapping.original_chat_id    == rule.source_chat_id,
                                 MessageMapping.original_msg_id     == msg.id,
                                 MessageMapping.destination_chat_id == rule.destination_id
@@ -184,7 +132,6 @@ async def reaction_poll_loop(client: TelegramClient, account: Account, interval:
                                 db = SessionLocal()
                                 await backfill_mappings(client, account, limit=100)
                                 mapping = db.query(MessageMapping).filter(
-                                    MessageMapping.account_id          == account.id,
                                     MessageMapping.original_chat_id    == rule.source_chat_id,
                                     MessageMapping.original_msg_id     == msg.id,
                                     MessageMapping.destination_chat_id == rule.destination_id
@@ -290,11 +237,10 @@ async def backfill_mappings(client: TelegramClient, account: Account, limit: int
 
                     if forwarded_id:
                         new_map = MessageMapping(
-                            account_id          = account.id,
-                            original_chat_id    = src_id,
-                            original_msg_id     = sm.id,
-                            destination_chat_id = dst_id,
-                            forwarded_msg_id    = forwarded_id
+                            original_chat_id   = src_id,
+                            original_msg_id    = sm.id,
+                            destination_chat_id= dst_id,
+                            forwarded_msg_id   = forwarded_id
                         )
                         db.add(new_map)
                         mapped_count += 1
@@ -308,64 +254,32 @@ async def backfill_mappings(client: TelegramClient, account: Account, limit: int
         db.close()
 
 
-async def start_client(account: Account, _existing_client: TelegramClient = None):
+async def start_client(account: Account):
     global clients
+    print(f"[{account.name}] Başlatılıyor...")
+    client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
+    
+    try:
+        # 30 saniye timeout ekle ki startup kilitlenmesin
+        await asyncio.wait_for(client.connect(), timeout=30)
+    except Exception as e:
+        print(f"[{account.name}] Bağlantı hatası: {e}")
+        return
 
-    # — Zaten bağlıysa tekrar başlatma (duplicate event handler önle) —
-    if account.id in clients:
-        existing = clients[account.id]
-        if existing.is_connected():
-            print(f"[{account.name}] Zaten bağlı, atlanıyor.")
-            return
-        else:
-            try:
-                await existing.disconnect()
-            except Exception:
-                pass
-            del clients[account.id]
-
-    if _existing_client is not None:
-        # Kullanıcı az önce giriş yaptı — client zaten bağlı ve authorized
-        # Disconnect/reconnect YOK → session flush race condition ortadan kalkar
-        client = _existing_client
-        print(f"[{account.name}] Mevcut bağlantı kullanılıyor (yeni giriş).")
-    else:
-        print(f"[{account.name}] Başlatılıyor...")
-        client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
-
+    if not await client.is_user_authorized():
+        print(f"[{account.name}] Yetkilendirme hatası! Lütfen tekrar giriş yapın.")
+        # DB'de is_active=False yap ki dashboard'da uyarı görünsün
         try:
-            await asyncio.wait_for(client.connect(), timeout=30)
-        except asyncio.TimeoutError:
-            print(f"[{account.name}] Bağlantı zaman aşıldı.")
-            return
-        except Exception as e:
-            print(f"[{account.name}] Bağlantı hatası: {e}")
-            return
-
-        try:
-            authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
-        except asyncio.TimeoutError:
-            print(f"[{account.name}] Yetkilendirme kontrolü zaman aşıldı.")
-            await client.disconnect()
-            return
-        except Exception as e:
-            print(f"[{account.name}] Yetkilendirme hatası: {e}")
-            await client.disconnect()
-            return
-
-        if not authorized:
-            print(f"[{account.name}] Oturum geçersiz. Lütfen tekrar giriş yapın.")
-            try:
-                db2 = SessionLocal()
-                acc_db = db2.query(Account).filter(Account.id == account.id).first()
-                if acc_db:
-                    acc_db.is_active = False
-                    db2.commit()
-                db2.close()
-            except Exception:
-                pass
-            await client.disconnect()
-            return
+            db = SessionLocal()
+            acc_db = db.query(Account).filter(Account.id == account.id).first()
+            if acc_db:
+                acc_db.is_active = False
+                db.commit()
+            db.close()
+        except Exception:
+            pass
+        await client.disconnect()
+        return
 
     clients[account.id] = client
     print(f"[{account.name}] Aktif.")
@@ -382,159 +296,108 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
         sender_id = str(sender.id) if sender else None
 
         db = SessionLocal()
-        try:
-            rules = db.query(Rule).filter(
-                Rule.source_chat_id == chat_id,
-                Rule.account_id == account.id,
-                Rule.is_active == True
-            ).all()
+        rules = db.query(Rule).filter(
+            Rule.source_chat_id == chat_id,
+            Rule.account_id == account.id,
+            Rule.is_active == True
+        ).all()
+        
+        for rule in rules:
+            if rule.sender_id and rule.sender_id != sender_id:
+                continue
 
-            for rule in rules:
-                if rule.sender_id and rule.sender_id != sender_id:
-                    continue
+            # ── Yanıt (reply) eşleştirmesi ──
+            reply_to_msg_id = None
+            if event.is_reply:
+                reply_msg = await event.get_reply_message()
+                if reply_msg:
+                    mapping = db.query(MessageMapping).filter(
+                        MessageMapping.original_chat_id == chat_id,
+                        MessageMapping.original_msg_id == reply_msg.id,
+                        MessageMapping.destination_chat_id == rule.destination_id
+                    ).first()
+                    if mapping:
+                        reply_to_msg_id = mapping.forwarded_msg_id
 
-                # ── Yanıt (reply) eşleştirmesi ──
-                reply_to_msg_id = None
-                reply_quote_text = ""
-                if event.is_reply:
-                    reply_msg = await event.get_reply_message()
-                    if reply_msg:
-                        # 1. Önce bu hesabın mapping'ine bak
-                        mapping = db.query(MessageMapping).filter(
-                            MessageMapping.account_id == account.id,
-                            MessageMapping.original_chat_id == chat_id,
-                            MessageMapping.original_msg_id == reply_msg.id,
-                            MessageMapping.destination_chat_id == rule.destination_id
-                        ).first()
+            # ── Kelime filtresi uygula ──
+            caption = event.message.message or ""
+            for f in rule.filters:
+                replace_str = f.replace_word if f.replace_word else ""
+                caption = caption.replace(f.search_word, replace_str)
 
-                        # 2. Bulamazsan NULL account_id (eski data) dene
-                        if not mapping:
-                            mapping = db.query(MessageMapping).filter(
-                                MessageMapping.account_id == None,
-                                MessageMapping.original_chat_id == chat_id,
-                                MessageMapping.original_msg_id == reply_msg.id,
-                                MessageMapping.destination_chat_id == rule.destination_id
-                            ).first()
+            try:
+                sent_msg = None
+                media = event.message.media
 
-                        # 3. Hala bulamazsan: BAŞKA hesapların aynı destination'a
-                        #    ilettiği mesajlara bak (çapraz hesap yanıt zinciri).
-                        #    Senaryo: A kişisi B'nin mesajını iletmiş,
-                        #    C kişisi D'nin B'ye yanıtını iletiyor —
-                        #    C'nin mapping'inde B'nin mesajı yok ama A'nın var.
-                        if not mapping:
-                            mapping = db.query(MessageMapping).filter(
-                                MessageMapping.original_chat_id == chat_id,
-                                MessageMapping.original_msg_id == reply_msg.id,
-                                MessageMapping.destination_chat_id == rule.destination_id
-                            ).first()
+                if media:
+                    # ── Medya türünü tespit et ──
+                    is_voice      = False
+                    is_video_note = False
+                    is_sticker    = False
+                    is_photo      = isinstance(media, types.MessageMediaPhoto)
+                    filename      = None
 
-                        if mapping:
-                            reply_to_msg_id = mapping.forwarded_msg_id
-                            print(f"[{account.name}] ↩️ Reply zinciri bulundu: "
-                                  f"src_msg={reply_msg.id} → dst_msg={reply_to_msg_id}")
-                        else:
-                            # Yanıtlanan mesaj hiç iletilmemiş — fake alıntı ekle
-                            try:
-                                r_sender = await reply_msg.get_sender()
-                                r_name = getattr(r_sender, 'first_name', '') or getattr(r_sender, 'title', '') or 'Biri'
-                                r_text = reply_msg.message or "[Medya]"
-                                if len(r_text) > 80:
-                                    r_text = r_text[:80] + "..."
-                                reply_quote_text = f"💬 {r_name}:\n\"{r_text}\"\n\n"
-                            except Exception:
-                                pass
+                    if isinstance(media, types.MessageMediaDocument):
+                        doc = media.document
+                        for attr in getattr(doc, "attributes", []):
+                            if isinstance(attr, types.DocumentAttributeAudio) and getattr(attr, "voice", False):
+                                is_voice = True
+                            if isinstance(attr, types.DocumentAttributeVideo) and getattr(attr, "round_message", False):
+                                is_video_note = True
+                            if isinstance(attr, types.DocumentAttributeSticker):
+                                is_sticker = True
+                            if isinstance(attr, types.DocumentAttributeFilename):
+                                filename = attr.file_name  # orijinal dosya adını koru
 
-                # ── Kelime filtresi uygula ──
-                caption = event.message.message or ""
-                for f in rule.filters:
-                    replace_str = f.replace_word if f.replace_word else ""
-                    caption = caption.replace(f.search_word, replace_str)
+                    # ── Medyayı indir ──
+                    buf = io.BytesIO()
+                    if filename:
+                        buf.name = filename  # Telethon bu ismi yükleme sırasında kullanır
+                    elif is_voice:
+                        buf.name = "voice.ogg"   # Voice note → Telegram ogg kullanır
+                    elif is_video_note:
+                        buf.name = "video_note.mp4"
+                    elif is_photo:
+                        buf.name = "photo.jpg"
+                    await client.download_media(event.message, file=buf)
+                    buf.seek(0)
 
-                # Eğer sahte alıntı varsa mesajın başına ekle
-                if reply_quote_text:
-                    caption = reply_quote_text + caption
+                    send_kwargs = dict(
+                        entity=int(rule.destination_id),
+                        file=buf,
+                        reply_to=reply_to_msg_id,
+                        voice_note=is_voice,
+                        video_note=is_video_note,
+                    )
+                    # Sticker ve ses kaydına caption eklenmez
+                    if not is_voice and not is_video_note and not is_sticker:
+                        send_kwargs["caption"] = caption
 
-                # ── Link kontrol ──
-                has_links = bool(_URL_RE.search(caption))
-                if rule.block_links and has_links:
-                    print(f"[{account.name}] 🔗 Linkli mesaj engellendi (msg={event.id})")
-                    continue
-                if rule.replace_link and has_links:
-                    caption = _URL_RE.sub(rule.replace_link, caption)
-                    print(f"[{account.name}] 🔗 Link degistirildi → {rule.replace_link} (msg={event.id})")
+                    sent_msg = await client.send_file(**send_kwargs)
 
-                try:
-                    sent_msg = None
-                    media = event.message.media
-
-                    if media:
-                        is_voice      = False
-                        is_video_note = False
-                        is_sticker    = False
-                        is_photo      = isinstance(media, types.MessageMediaPhoto)
-                        filename      = None
-
-                        if isinstance(media, types.MessageMediaDocument):
-                            doc = media.document
-                            for attr in getattr(doc, "attributes", []):
-                                if isinstance(attr, types.DocumentAttributeAudio) and getattr(attr, "voice", False):
-                                    is_voice = True
-                                if isinstance(attr, types.DocumentAttributeVideo) and getattr(attr, "round_message", False):
-                                    is_video_note = True
-                                if isinstance(attr, types.DocumentAttributeSticker):
-                                    is_sticker = True
-                                if isinstance(attr, types.DocumentAttributeFilename):
-                                    filename = attr.file_name
-
-                        buf = io.BytesIO()
-                        if filename:
-                            buf.name = filename
-                        elif is_voice:
-                            buf.name = "voice.ogg"
-                        elif is_video_note:
-                            buf.name = "video_note.mp4"
-                        elif is_photo:
-                            buf.name = "photo.jpg"
-                        await client.download_media(event.message, file=buf)
-                        buf.seek(0)
-
-                        send_kwargs = dict(
-                            entity=int(rule.destination_id),
-                            file=buf,
-                            reply_to=reply_to_msg_id,
-                            voice_note=is_voice,
-                            video_note=is_video_note,
+                else:
+                    # ── Saf metin mesajı ──
+                    if caption:
+                        sent_msg = await client.send_message(
+                            int(rule.destination_id),
+                            message=caption,
+                            reply_to=reply_to_msg_id
                         )
-                        if not is_voice and not is_video_note and not is_sticker:
-                            send_kwargs["caption"] = caption
 
-                        sent_msg = await client.send_file(**send_kwargs)
+                if sent_msg:
+                    new_mapping = MessageMapping(
+                        original_chat_id=chat_id,
+                        original_msg_id=event.id,
+                        destination_chat_id=rule.destination_id,
+                        forwarded_msg_id=sent_msg.id
+                    )
+                    db.add(new_mapping)
+                    db.commit()
+                    print(f"[{account.name}] ✅ İletildi: {chat_id} msg={event.id} → {rule.destination_id} msg={sent_msg.id}")
 
-                    else:
-                        if caption:
-                            sent_msg = await client.send_message(
-                                int(rule.destination_id),
-                                message=caption,
-                                reply_to=reply_to_msg_id
-                            )
-
-                    if sent_msg:
-                        new_mapping = MessageMapping(
-                            account_id=account.id,
-                            original_chat_id=chat_id,
-                            original_msg_id=event.id,
-                            destination_chat_id=rule.destination_id,
-                            forwarded_msg_id=sent_msg.id
-                        )
-                        db.add(new_mapping)
-                        db.commit()
-                        print(f"[{account.name}] ✅ İletildi: {chat_id} msg={event.id} → {rule.destination_id} msg={sent_msg.id}")
-
-                except Exception as e:
-                    print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {e}")
-        finally:
-            db.close()
-
+            except Exception as e:
+                print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {e}")
+        db.close()
 
     @client.on(events.Raw)
     async def raw_handler(update):
@@ -604,6 +467,27 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             db.close()
 
     print(f"[{account.name}] Aktif ve dinliyor.")
+
+
+@app.on_event("startup")
+async def startup_event():
+    print("[System] Uygulama başlatılıyor...")
+    try:
+        database.init_db()
+        print("[System] Veritabanı hazır.")
+    except Exception as e:
+        print(f"[System] Veritabanı başlatma hatası: {e}")
+
+    db = SessionLocal()
+    try:
+        accounts = db.query(Account).filter(Account.is_active == True).all()
+        print(f"[System] {len(accounts)} aktif hesap başlatılıyor...")
+        for account in accounts:
+            asyncio.create_task(start_client(account))
+    except Exception as e:
+        print(f"[System] Hesap başlatma hatası: {e}")
+    finally:
+        db.close()
 
 # ── LOGIN / LOGOUT ──
 
@@ -707,27 +591,8 @@ async def _watch_qr(temp_id: str):
         return
     try:
         await session["qr"].wait(timeout=120)
-    except SessionPasswordNeededError:
-        # QR tarandı ama 2FA şifresi gerekiyor — client bağlı kalsın
-        session["status"] = "2fa_required"
-        print(f"[QR] 2FA gerekli: {temp_id}")
-        return
-    except Exception as e:
-        print(f"[QR] Login hatası ({temp_id}): {e}")
-        session["status"] = "expired"
-        return
-
-    session["status"] = "ok"
-    await _finalize_qr_session(temp_id)
-
-
-async def _finalize_qr_session(temp_id: str):
-    """QR veya 2FA tamamlandıktan sonra hesabı DB'ye kaydeder ve mevcut client ile başlar."""
-    session = qr_sessions.get(temp_id)
-    if not session:
-        return
-    client: TelegramClient = session["client"]
-    try:
+        session["status"] = "ok"
+        client: TelegramClient = session["client"]
         me = await client.get_me()
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if raw_phone and not str(raw_phone).startswith("+") else str(raw_phone)
@@ -747,25 +612,25 @@ async def _finalize_qr_session(temp_id: str):
                 db.add(new_acc)
                 db.commit()
                 db.refresh(new_acc)
-                # Mevcut bağlı client'i kullan — disconnect/reconnect yok!
-                asyncio.create_task(start_client(new_acc, _existing_client=client))
+                asyncio.create_task(start_client(new_acc))
                 print(f"[QR] Yeni hesap eklendi: {session['name']} ({phone})")
             else:
+                # Hesap var ama user_id atanmamışsa güncelle (dashboard'da görünsün)
                 uid = session.get("user_id")
                 if uid and exists.user_id is None:
                     exists.user_id = uid
                     db.commit()
-                if exists.is_active is False:
-                    exists.is_active = True
-                    db.commit()
-                asyncio.create_task(start_client(exists, _existing_client=client))
-                print(f"[QR] Hesap güncellendi: {phone}")
+                    print(f"[QR] Hesap user_id güncellendi: {phone} → user {uid}")
+                else:
+                    print(f"[QR] Hesap zaten kayıtlı: {phone}")
+                # Aktif değilse client'ı başlat
+                if exists.id not in clients:
+                    asyncio.create_task(start_client(exists))
         finally:
             db.close()
     except Exception as e:
-        print(f"[QR] Finalize hatası ({temp_id}): {e}")
-        if temp_id in qr_sessions:
-            qr_sessions[temp_id]["status"] = "expired"
+        print(f"[QR] Login hatası ({temp_id}): {e}")
+        session["status"] = "expired"
 
 
 @app.post("/accounts/qr-start")
@@ -780,55 +645,27 @@ async def qr_start(
     if not user:
         return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
 
-    # Check if name is already used
-    existing_acc = db.query(Account).filter(Account.user_id == user.id, Account.name == name).first()
-    if existing_acc:
-        return JSONResponse({"error": f"'{name}' isminde bir hesap zaten var. Lütfen farklı bir isim seçin."}, status_code=400)
-
     session_file = os.path.join(_DATA_DIR, f"{user.username}_{name.replace(' ', '_')}.session")
     client = TelegramClient(session_file, int(api_id), api_hash)
-    try:
-        await asyncio.wait_for(client.connect(), timeout=20)
-    except asyncio.TimeoutError:
-        return JSONResponse({"error": "Telegram sunucusuna bağlanma zaman aşıldı. Lütfen tekrar dene."}, status_code=408)
-    except Exception as e:
-        return JSONResponse({"error": f"Bağlantı hatası: {e}"}, status_code=400)
+    await client.connect()
 
-    try:
-        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=10)
-    except asyncio.TimeoutError:
-        await client.disconnect()
-        return JSONResponse({"error": "Yetkilendirme kontrolü zaman aşıldı."}, status_code=408)
-
-    if authorized:
-        me = await asyncio.wait_for(client.get_me(), timeout=10)
+    if await client.is_user_authorized():
+        me = await client.get_me()
         raw_phone = getattr(me, "phone", None) or f"uid_{me.id}"
         phone = f"+{raw_phone}" if not str(raw_phone).startswith("+") else str(raw_phone)
-        await client.disconnect()
-        await asyncio.sleep(0.5)
         db2 = SessionLocal()
-        exists2 = db2.query(Account).filter(Account.phone == phone).first()
-        if not exists2:
+        if not db2.query(Account).filter(Account.phone == phone).first():
             new_acc = Account(user_id=user.id, name=name, phone=phone, api_id=api_id,
                               api_hash=api_hash, session_file=session_file)
             db2.add(new_acc)
             db2.commit()
             db2.refresh(new_acc)
             asyncio.create_task(start_client(new_acc))
-        else:
-            if exists2.is_active is False:
-                exists2.is_active = True
-                db2.commit()
-            if exists2.id not in clients:
-                asyncio.create_task(start_client(exists2))
         db2.close()
         return JSONResponse({"status": "already_authorized"})
 
     try:
-        qr_login = await asyncio.wait_for(client.qr_login(), timeout=15)
-    except asyncio.TimeoutError:
-        await client.disconnect()
-        return JSONResponse({"error": "QR oluşturma zaman aşıldı. Tekrar dene."}, status_code=408)
+        qr_login = await client.qr_login()
     except Exception as e:
         await client.disconnect()
         return JSONResponse({"error": str(e)}, status_code=400)
@@ -861,13 +698,11 @@ async def qr_status(account_id: str = Query(...)):
     if status == "expired":
         qr_sessions.pop(account_id, None)
         return JSONResponse({"status": "expired"})
-    if status == "2fa_required":
-        # Session'u silme — şifre bekleniyor
-        return JSONResponse({"status": "2fa_required"})
 
     # Hâlâ bekliyor → QR URL taze mi kontrol et, yenile
     try:
         qr_login = session["qr"]
+        # URL hâlâ geçerliyse gönder; süresi dolmuşsa recreate
         try:
             await qr_login.recreate()
         except Exception:
@@ -875,37 +710,6 @@ async def qr_status(account_id: str = Query(...)):
         return JSONResponse({"status": "pending", "qr_b64": _make_qr_b64(qr_login.url)})
     except Exception:
         return JSONResponse({"status": "pending"})
-
-
-@app.post("/accounts/qr-2fa")
-async def qr_2fa_verify(
-    account_id: str = Form(...),
-    password: str = Form(...),
-):
-    """
-    QR tarandıktan sonra 2 Adımlı Doğrulama şifresini alır ve girifi tamamlar.
-    """
-    session = qr_sessions.get(account_id)
-    if not session:
-        return JSONResponse({"error": "Oturum bulunamadı veya süresi doldu. Tekrar QR oluştur."}, status_code=404)
-    if session.get("status") != "2fa_required":
-        return JSONResponse({"error": "2FA beklenmiyordu."}, status_code=400)
-
-    client: TelegramClient = session["client"]
-    try:
-        await asyncio.wait_for(client.sign_in(password=password), timeout=20)
-    except asyncio.TimeoutError:
-        return JSONResponse({"error": "Şifre doğrulama zaman aşıldı. Tekrar dene."}, status_code=408)
-    except Exception as e:
-        err = str(e)
-        if "PASSWORD_HASH_INVALID" in err or "The password is invalid" in err:
-            return JSONResponse({"error": "Hatalı şifre. Lütfen tekrar dene."}, status_code=400)
-        return JSONResponse({"error": f"Giriş hatası: {err}"}, status_code=400)
-
-    # Şifre doğru — hesabı kaydet
-    session["status"] = "ok"
-    asyncio.create_task(_finalize_qr_session(account_id))
-    return JSONResponse({"status": "ok"})
 
 @app.post("/accounts/send_code")
 async def send_code(
@@ -917,31 +721,11 @@ async def send_code(
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
-    
-    # Check if name is already used by this user
-    if user:
-        existing_acc = db.query(Account).filter(Account.user_id == user.id, Account.name == name).first()
-        if existing_acc:
-            return RedirectResponse(url=f"/accounts/add?error='{name}'+isminde+bir+hesap+zaten+var.+Lutfen+farkli+bir+isim+secin.", status_code=303)
-
-    session_file = os.path.join(_DATA_DIR, f"{user.username if user else 'anon'}_{name.replace(' ', '_')}.session")
+    session_file = os.path.join(_DATA_DIR, f"{name}.session")
     client = TelegramClient(session_file, int(api_id), api_hash)
-    try:
-        await asyncio.wait_for(client.connect(), timeout=20)
-    except asyncio.TimeoutError:
-        return RedirectResponse(url=f"/accounts/verify?phone={phone.replace('+', '%2B')}&error=timeout", status_code=303)
-    except Exception as e:
-        return RedirectResponse(url=f"/accounts/add?error={str(e)}", status_code=303)
+    await client.connect()
 
-    try:
-        result = await asyncio.wait_for(client.send_code_request(phone), timeout=20)
-    except asyncio.TimeoutError:
-        await client.disconnect()
-        return RedirectResponse(url=f"/accounts/add?error=Telegram+kodu+gonderme+zaman+asimi", status_code=303)
-    except Exception as e:
-        await client.disconnect()
-        return RedirectResponse(url=f"/accounts/add?error={str(e)}", status_code=303)
-
+    result = await client.send_code_request(phone)
     login_sessions[phone] = (client, result.phone_code_hash, name, api_id, api_hash, session_file, user.id if user else None)
 
     return RedirectResponse(url=f"/accounts/verify?phone={phone.replace('+', '%2B')}", status_code=303)
@@ -972,105 +756,35 @@ async def verify_code(
     uid = (user.id if user else None) or saved_uid
 
     try:
-        await asyncio.wait_for(
-            client.sign_in(phone, code, phone_code_hash=phone_code_hash),
-            timeout=20
-        )
-    except SessionPasswordNeededError:
-        # 2FA şifresi gerekiyor — client hala login_sessions'ta, 2FA sayfasina yönlendir
-        print(f"[Phone] 2FA gerekli: {phone}")
-        return RedirectResponse(
-            url=f"/accounts/verify-2fa?phone={phone.replace('+', '%2B')}",
-            status_code=303
-        )
-    except asyncio.TimeoutError:
-        return RedirectResponse(url=f"/accounts/verify?phone={phone}&error=timeout", status_code=303)
+        await client.sign_in(phone, code, phone_code_hash=phone_code_hash)
+        await client.disconnect()
+
+        # Zaten kayıtlı mı kontrol et
+        exists = db.query(Account).filter(Account.phone == phone).first()
+        if exists:
+            if uid and exists.user_id is None:
+                exists.user_id = uid
+                db.commit()
+            if exists.id not in clients:
+                asyncio.create_task(start_client(exists))
+        else:
+            new_acc = Account(
+                user_id=uid,
+                name=name,
+                phone=phone,
+                api_id=api_id,
+                api_hash=api_hash,
+                session_file=session_file
+            )
+            db.add(new_acc)
+            db.commit()
+            asyncio.create_task(start_client(new_acc))
+
+        del login_sessions[phone]
+        return RedirectResponse(url="/", status_code=303)
     except Exception as e:
         print(f"Dogrulama hatasi: {e}")
         return RedirectResponse(url=f"/accounts/verify?phone={phone}", status_code=303)
-
-    # 2FA yoksa başarılı — mevcut client'i kullan (disconnect/reconnect yok!)
-    exists = db.query(Account).filter(Account.phone == phone).first()
-    if exists:
-        if uid and exists.user_id is None:
-            exists.user_id = uid
-            db.commit()
-        asyncio.create_task(start_client(exists, _existing_client=client))
-    else:
-        new_acc = Account(
-            user_id=uid, name=name, phone=phone,
-            api_id=api_id, api_hash=api_hash, session_file=session_file
-        )
-        db.add(new_acc)
-        db.commit()
-        db.refresh(new_acc)
-        asyncio.create_task(start_client(new_acc, _existing_client=client))
-
-    del login_sessions[phone]
-    return RedirectResponse(url="/", status_code=303)
-
-
-@app.get("/accounts/verify-2fa", response_class=HTMLResponse)
-async def verify_2fa_form(request: Request, phone: str, error: str = None):
-    return templates.TemplateResponse(
-        request=request, name="verify.html",
-        context={"phone": phone, "step": "2fa", "error": error}
-    )
-
-
-@app.post("/accounts/verify-2fa")
-async def verify_2fa_code(
-    request: Request,
-    phone: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db)
-):
-    if phone not in login_sessions:
-        return RedirectResponse(url="/accounts/add", status_code=303)
-
-    session_data = login_sessions[phone]
-    if len(session_data) == 7:
-        client, phone_code_hash, name, api_id, api_hash, session_file, saved_uid = session_data
-    else:
-        client, phone_code_hash, name, api_id, api_hash, session_file = session_data
-        saved_uid = None
-
-    user = get_current_user(request, db)
-    uid = (user.id if user else None) or saved_uid
-
-    try:
-        await asyncio.wait_for(client.sign_in(password=password), timeout=20)
-    except asyncio.TimeoutError:
-        return RedirectResponse(
-            url=f"/accounts/verify-2fa?phone={phone.replace('+', '%2B')}&error=Zaman+asimi",
-            status_code=303
-        )
-    except Exception as e:
-        err_msg = "Şifre hatalı" if "PASSWORD_HASH_INVALID" in str(e) or "invalid" in str(e).lower() else str(e)
-        return RedirectResponse(
-            url=f"/accounts/verify-2fa?phone={phone.replace('+', '%2B')}&error={err_msg}",
-            status_code=303
-        )
-
-    # Başarılı — mevcut client'i kullan (disconnect/reconnect yok!)
-    exists = db.query(Account).filter(Account.phone == phone).first()
-    if exists:
-        if uid and exists.user_id is None:
-            exists.user_id = uid
-            db.commit()
-        asyncio.create_task(start_client(exists, _existing_client=client))
-    else:
-        new_acc = Account(
-            user_id=uid, name=name, phone=phone,
-            api_id=api_id, api_hash=api_hash, session_file=session_file
-        )
-        db.add(new_acc)
-        db.commit()
-        db.refresh(new_acc)
-        asyncio.create_task(start_client(new_acc, _existing_client=client))
-
-    del login_sessions[phone]
-    return RedirectResponse(url="/", status_code=303)
 
 @app.post("/accounts/{account_id}/delete")
 async def delete_account(account_id: int, db: Session = Depends(get_db)):
@@ -1202,23 +916,6 @@ async def add_filter(
     db.add(new_filter)
     db.commit()
     return RedirectResponse(url="/", status_code=303)
-
-@app.post("/rules/{rule_id}/link-settings")
-async def update_rule_links(
-    rule_id: int,
-    block_links: bool = Form(False),
-    replace_link: str = Form(None),
-    db: Session = Depends(get_db)
-):
-    rule = db.query(Rule).filter(Rule.id == rule_id).first()
-    if rule:
-        rule.block_links = block_links
-        # if replace_link is provided, block_links must be false since it doesn't make sense to block and replace. 
-        # But UI should handle this. Let's just save whatever is sent.
-        rule.replace_link = replace_link if replace_link else None
-        db.commit()
-    return RedirectResponse(url="/", status_code=303)
-
 
 @app.post("/filters/{filter_id}/delete")
 async def delete_filter(filter_id: int, db: Session = Depends(get_db)):
@@ -1482,91 +1179,6 @@ async def search_member(
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
-
-
-@app.post("/find-sender")
-async def find_sender(
-    message_link: str = Form(...),
-    account_id: int = Form(...),
-):
-    """
-    Verilen Telegram mesaj linkinden gönderen kişinin ID'sini bulur.
-    İsim gizleyen veya anonim admin olan kullanıcılar için kullanılır.
-    Desteklenen formatlar:
-      - https://t.me/grupadi/123
-      - https://t.me/c/1234567890/123   (özel grup)
-      - t.me/c/...  veya  t.me/grupadi/...
-    """
-    from telethon import utils as tg_utils
-    from telethon.tl.types import PeerChannel, PeerUser
-
-    if account_id not in clients:
-        return JSONResponse({"error": "Seçilen hesap aktif değil."}, status_code=400)
-
-    client = clients[account_id]
-    link = message_link.strip().rstrip("/")
-
-    try:
-        # ── Link'i parçala ──
-        if "t.me/c/" in link:
-            # Özel grup: t.me/c/<channel_id>/<msg_id>
-            tail = link.split("t.me/c/")[-1]
-            parts = [p for p in tail.split("/") if p]
-            if len(parts) < 2:
-                return JSONResponse({"error": "Link formatı yanlış. Örn: t.me/c/1234567/89"}, status_code=400)
-            channel_id = int(parts[0])
-            msg_id = int(parts[1])
-            peer = await client.get_entity(PeerChannel(channel_id))
-        elif "t.me/" in link:
-            # Açık grup/kanal: t.me/<username>/<msg_id>
-            tail = link.split("t.me/")[-1]
-            parts = [p for p in tail.split("/") if p]
-            if len(parts) < 2:
-                return JSONResponse({"error": "Link formatı yanlış. Örn: t.me/grupadi/123"}, status_code=400)
-            username = parts[0]
-            msg_id = int(parts[1])
-            peer = await client.get_entity(f"@{username}")
-        else:
-            return JSONResponse({"error": "Geçersiz link. t.me/... formatında olmalı."}, status_code=400)
-
-        # ── Mesajı çek ──
-        msg = await client.get_messages(peer, ids=msg_id)
-        if not msg:
-            return JSONResponse({"error": "Mesaj bulunamadı. Hesabın bu gruba üye olduğundan emin ol."}, status_code=404)
-
-        # ── Göndereni belirle ──
-        from_id = getattr(msg, "from_id", None)
-
-        # Anonim admin: from_id PeerChannel olur (mesaj kanal kimliğiyle gönderilmiş)
-        if from_id is None or isinstance(from_id, PeerChannel):
-            chat_id = str(tg_utils.get_peer_id(peer))
-            chat_title = getattr(peer, "title", "Anonim Admin")
-            return JSONResponse({
-                "id": chat_id,
-                "name": chat_title,
-                "username": "",
-                "note": "⚠️ Bu kişi anonim admin olarak yazıyor. Filtre için grubun kendi ID'si kullanılır."
-            })
-
-        # Normal kullanıcı
-        sender = await client.get_entity(from_id)
-        sender_id = str(tg_utils.get_peer_id(sender))
-        first = getattr(sender, "first_name", "") or ""
-        last  = getattr(sender, "last_name",  "") or ""
-        uname = getattr(sender, "username",   "") or ""
-        display = f"{first} {last}".strip() or f"ID:{sender_id}"
-
-        return JSONResponse({
-            "id": sender_id,
-            "name": display,
-            "username": uname,
-            "note": ""
-        })
-
-    except ValueError:
-        return JSONResponse({"error": "Mesaj ID sayı olmalı."}, status_code=400)
-    except Exception as e:
-        return JSONResponse({"error": f"Hata: {str(e)}"}, status_code=400)
 
 
 if __name__ == "__main__":
