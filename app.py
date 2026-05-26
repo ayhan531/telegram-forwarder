@@ -399,7 +399,17 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 if event.is_reply:
                     reply_msg = await event.get_reply_message()
                     if reply_msg:
-                        # 1. Önce bu hesabın mapping'ine bak
+                        # Hedef grup ID'sini normalize et (format farkı olabilir)
+                        def _norm_id(v):
+                            s = str(v).strip()
+                            # -1001234... → 1234..., -1234 → 1234
+                            if s.startswith('-100'):
+                                return s[4:]
+                            return s.lstrip('-')
+
+                        dest_norm = _norm_id(rule.destination_id)
+
+                        # 1. Bu hesabın kendi mapping'i
                         mapping = db.query(MessageMapping).filter(
                             MessageMapping.account_id == account.id,
                             MessageMapping.original_chat_id == chat_id,
@@ -407,7 +417,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             MessageMapping.destination_chat_id == rule.destination_id
                         ).first()
 
-                        # 2. Bulamazsan NULL account_id (eski data) dene
+                        # 2. NULL account (eski kayıtlar)
                         if not mapping:
                             mapping = db.query(MessageMapping).filter(
                                 MessageMapping.account_id == None,
@@ -416,24 +426,27 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 MessageMapping.destination_chat_id == rule.destination_id
                             ).first()
 
-                        # 3. Hala bulamazsan: BAŞKA hesapların aynı destination'a
-                        #    ilettiği mesajlara bak (çapraz hesap yanıt zinciri).
-                        #    Senaryo: A kişisi B'nin mesajını iletmiş,
-                        #    C kişisi D'nin B'ye yanıtını iletiyor —
-                        #    C'nin mapping'inde B'nin mesajı yok ama A'nın var.
+                        # 3. Çapraz hesap: aynı kaynak mesajı HERHANGI bir hesap iletmiş mi?
+                        #    (destination_chat_id filtresi olmadan al, sonra normalize edeceğiz)
                         if not mapping:
-                            mapping = db.query(MessageMapping).filter(
+                            all_maps = db.query(MessageMapping).filter(
                                 MessageMapping.original_chat_id == chat_id,
                                 MessageMapping.original_msg_id == reply_msg.id,
-                                MessageMapping.destination_chat_id == rule.destination_id
-                            ).first()
+                            ).all()
+                            for m in all_maps:
+                                if _norm_id(m.destination_chat_id) == dest_norm:
+                                    mapping = m
+                                    print(f"[{account.name}] ↩️ Çapraz hesap reply eşleşti: "
+                                          f"src_msg={reply_msg.id} → dst_msg={m.forwarded_msg_id} "
+                                          f"(dst_chat={m.destination_chat_id})")
+                                    break
 
                         if mapping:
                             reply_to_msg_id = mapping.forwarded_msg_id
-                            print(f"[{account.name}] ↩️ Reply zinciri bulundu: "
-                                  f"src_msg={reply_msg.id} → dst_msg={reply_to_msg_id}")
                         else:
-                            # Yanıtlanan mesaj hiç iletilmemiş — fake alıntı ekle
+                            # Yanıtlanan mesaj hiç iletilmemiş — debug log + fake alıntı
+                            print(f"[{account.name}] ⚠️ Reply mapping bulunamadı: "
+                                  f"src_chat={chat_id} src_msg={reply_msg.id} dest={rule.destination_id}(norm={dest_norm})")
                             try:
                                 r_sender = await reply_msg.get_sender()
                                 r_name = getattr(r_sender, 'first_name', '') or getattr(r_sender, 'title', '') or 'Biri'
@@ -1184,6 +1197,17 @@ async def delete_rule(rule_id: int, db: Session = Depends(get_db)):
     rule = db.query(Rule).filter(Rule.id == rule_id).first()
     if rule:
         db.delete(rule)
+        db.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/rules/{rule_id}/toggle")
+async def toggle_rule(rule_id: int, request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if rule:
+        rule.is_active = not rule.is_active
         db.commit()
     return RedirectResponse(url="/", status_code=303)
 

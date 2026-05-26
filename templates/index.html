@@ -216,8 +216,13 @@
           </thead>
           <tbody>
             {% for rule in rules %}
-            <tr>
-              <td><span class="badge badge-blue">{{ rule.account.name if rule.account else '?' }}</span></td>
+            <tr style="{{ 'opacity:.45;' if not rule.is_active else '' }}">
+              <td>
+                <span class="badge badge-blue">{{ rule.account.name if rule.account else '?' }}</span>
+                {% if not rule.is_active %}
+                  <span style="font-size:.65rem;background:rgba(251,191,36,.2);color:#fbbf24;padding:.1rem .4rem;border-radius:4px;margin-left:.3rem">⏸ Duraklatıldı</span>
+                {% endif %}
+              </td>
               <td>
                 <div class="route-arrow">
                   <code style="font-size:.78rem;color:#93c5fd">{{ rule.source_chat_id }}</code>
@@ -270,11 +275,27 @@
                 </details>
               </td>
               <td>
-                <form action="/rules/{{ rule.id }}/delete" method="POST">
-                  <button type="submit" class="btn btn-danger" style="padding:.4rem .7rem">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-                  </button>
-                </form>
+                <div class="flex gap-2">
+                  <!-- Duraklat / Devam Et -->
+                  <form action="/rules/{{ rule.id }}/toggle" method="POST">
+                    <button type="submit" title="{{ 'Devam et' if not rule.is_active else 'Duraklat' }}"
+                      style="padding:.4rem .7rem; border:none; border-radius:8px; cursor:pointer;
+                             background:{{ 'rgba(74,222,128,.15)' if rule.is_active else 'rgba(251,191,36,.15)' }};
+                             color:{{ '#4ade80' if rule.is_active else '#fbbf24' }}">
+                      {% if rule.is_active %}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                      {% else %}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                      {% endif %}
+                    </button>
+                  </form>
+                  <!-- Sil -->
+                  <form action="/rules/{{ rule.id }}/delete" method="POST">
+                    <button type="submit" class="btn btn-danger" style="padding:.4rem .7rem">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                    </button>
+                  </form>
+                </div>
               </td>
             </tr>
             {% endfor %}
