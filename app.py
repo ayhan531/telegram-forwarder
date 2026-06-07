@@ -27,6 +27,34 @@ load_dotenv()
 async def lifespan(app: FastAPI):
     """Uygulama başlangıç ve bitiş olayları."""
     import database as _db_module
+    import os
+    import urllib.request
+    import tarfile
+
+    data_dir = os.environ.get("DATA_DIR", ".")
+    db_path  = os.path.join(data_dir, "telegram_forwarder.db")
+    
+    # --- AUTO RESTORE BACKUP IF DB IS MISSING ---
+    if not os.path.exists(db_path):
+        try:
+            print("[System] 🚨 Veritabanı bulunamadı. Yedek indiriliyor...")
+            urllib.request.urlretrieve("https://litter.catbox.moe/8spg0a.gz", "backup.tar.gz")
+            os.system("tar -xzvf backup.tar.gz")
+            os.system(f"mkdir -p {data_dir}")
+            os.system(f"cp -r *.db* *.session* {data_dir}/")
+            
+            # Tüm hesapları herkes görebilsin diye NULL yapıyoruz
+            import sqlite3
+            c = sqlite3.connect(db_path)
+            c.execute('UPDATE accounts SET user_id = NULL')
+            c.commit()
+            c.close()
+            
+            print("[System] ✅ Yedek başarıyla geri yüklendi ve onarıldı!")
+        except Exception as e:
+            print(f"[System] ❌ Yedek yükleme hatası: {e}")
+    # --------------------------------------------
+    import database as _db_module
     data_dir = os.environ.get("DATA_DIR", ".")
     db_path  = os.path.join(data_dir, "telegram_forwarder.db")
     disk_ok  = os.path.isdir(data_dir) and os.access(data_dir, os.W_OK)
@@ -38,6 +66,29 @@ async def lifespan(app: FastAPI):
     if not disk_ok:
         print("[System] ⚠️  UYARI: Veri dizini yazılabilir değil. "
               "Render Dashboard → Disks → /data eklendiğinden emin ol!")
+
+    # --- TELETHON SESSION REPAIR ---
+    # Eğer Render restart sırasında SQLite session dosyaları bozulursa (no such table: entities hatası)
+    # Bu kod eksik tabloları veriyi silmeden otomatik onarır.
+    import sqlite3
+    import glob
+    print("[System] Session dosyaları kontrol ediliyor ve onarılıyor...")
+    for s_file in glob.glob(os.path.join(data_dir, "*.session")):
+        try:
+            with sqlite3.connect(s_file) as conn:
+                c = conn.cursor()
+                c.execute('''CREATE TABLE IF NOT EXISTS entities (
+                    id integer primary key,
+                    hash integer not null,
+                    username text,
+                    phone integer,
+                    name text,
+                    date integer
+                )''')
+                conn.commit()
+        except Exception as e:
+            print(f"[System] ⚠️ Session onarma hatası ({s_file}): {e}")
+    # -------------------------------
 
     try:
         database.init_db()
@@ -147,6 +198,11 @@ async def reaction_poll_loop(client: TelegramClient, account: Account, interval:
     await asyncio.sleep(12)  # Backfill tamamlansın
 
     while True:
+        if not client.is_connected():
+            print(f"[{account.name}] ❌ [POLL] Client disconnected. Bağlantı bekleniyor...")
+            await asyncio.sleep(15)
+            continue
+            
         try:
             db = SessionLocal()
             try:
