@@ -11,9 +11,9 @@ SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/telegram_forwarder.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30},
-    pool_size=10,
-    max_overflow=20,
+    connect_args={"check_same_thread": False, "timeout": 60},
+    pool_size=150,
+    max_overflow=100,
 )
 
 # WAL modu: eş zamanlı okuma/yazma çakışmasını önler
