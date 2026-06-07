@@ -31,29 +31,6 @@ async def lifespan(app: FastAPI):
     import urllib.request
     import tarfile
 
-    data_dir = os.environ.get("DATA_DIR", ".")
-    db_path  = os.path.join(data_dir, "telegram_forwarder.db")
-    
-    # --- AUTO RESTORE BACKUP IF DB IS MISSING ---
-    if not os.path.exists(db_path):
-        try:
-            print("[System] 🚨 Veritabanı bulunamadı. Yedek indiriliyor...")
-            urllib.request.urlretrieve("https://litter.catbox.moe/8spg0a.gz", "backup.tar.gz")
-            os.system("tar -xzvf backup.tar.gz")
-            os.system(f"mkdir -p {data_dir}")
-            os.system(f"cp -r *.db* *.session* {data_dir}/")
-            
-            # Tüm hesapları herkes görebilsin diye NULL yapıyoruz
-            import sqlite3
-            c = sqlite3.connect(db_path)
-            c.execute('UPDATE accounts SET user_id = NULL')
-            c.commit()
-            c.close()
-            
-            print("[System] ✅ Yedek başarıyla geri yüklendi ve onarıldı!")
-        except Exception as e:
-            print(f"[System] ❌ Yedek yükleme hatası: {e}")
-    # --------------------------------------------
     import database as _db_module
     data_dir = os.environ.get("DATA_DIR", ".")
     db_path  = os.path.join(data_dir, "telegram_forwarder.db")
@@ -66,6 +43,36 @@ async def lifespan(app: FastAPI):
     if not disk_ok:
         print("[System] ⚠️  UYARI: Veri dizini yazılabilir değil. "
               "Render Dashboard → Disks → /data eklendiğinden emin ol!")
+
+    # Veritabanını oluştur
+    _db_module.init_db()
+
+    # --- AUTO RESTORE BACKUP IF ACCOUNTS ARE EMPTY ---
+    try:
+        import sqlite3
+        import urllib.request
+        c = sqlite3.connect(db_path)
+        acc_count = c.execute("SELECT count(*) FROM accounts").fetchone()[0]
+        if acc_count == 0:
+            print("[System] 🚨 Veritabanı boş. Yedek indiriliyor ve enjekte ediliyor...")
+            urllib.request.urlretrieve("https://litter.catbox.moe/8spg0a.gz", "backup.tar.gz")
+            os.system("tar -xzvf backup.tar.gz")
+            os.system(f"mkdir -p {data_dir}")
+            os.system(f"cp -r *.session {data_dir}/")
+            
+            c.execute("ATTACH DATABASE 'telegram_forwarder.db' AS backup")
+            for t in ['users', 'accounts', 'rules', 'word_filters', 'message_mappings']:
+                try:
+                    c.execute(f"INSERT OR IGNORE INTO {t} SELECT * FROM backup.{t}")
+                except Exception as e:
+                    print(f"Tablo aktarim hatasi ({t}): {e}")
+            c.execute("UPDATE accounts SET user_id = NULL")
+            c.commit()
+            print("[System] ✅ Yedek başarıyla geri yüklendi ve onarıldı!")
+        c.close()
+    except Exception as e:
+        print(f"[System] ❌ Yedek yükleme hatası: {e}")
+    # --------------------------------------------
 
     # --- TELETHON SESSION REPAIR ---
     # Eğer Render restart sırasında SQLite session dosyaları bozulursa (no such table: entities hatası)
@@ -91,7 +98,6 @@ async def lifespan(app: FastAPI):
     # -------------------------------
 
     try:
-        database.init_db()
         print("[System] Veritabanı hazır.")
     except Exception as e:
         print(f"[System] Veritabanı başlatma hatası: {e}")
