@@ -92,6 +92,27 @@ class MessageMapping(Base):
     last_reactions      = Column(String, nullable=True, default="")
 
 
+class Teacher(Base):
+    __tablename__ = "teachers"
+    id                = Column(Integer, primary_key=True, index=True)
+    name              = Column(String)
+    source_chat_id    = Column(String, index=True)
+    teacher_user_id   = Column(String, index=True)
+    delay_max_minutes = Column(Integer, default=5)
+
+    reactions = relationship("TeacherReaction", back_populates="teacher", cascade="all, delete-orphan")
+
+
+class TeacherReaction(Base):
+    __tablename__ = "teacher_reactions"
+    id         = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"))
+    account_id = Column(Integer, ForeignKey("accounts.id"))
+    emojis     = Column(String)
+
+    teacher = relationship("Teacher", back_populates="reactions")
+
+
 def init_db():
     # ── Tabloları oluştur ──
     Base.metadata.create_all(bind=engine)

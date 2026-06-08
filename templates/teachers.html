@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hoca Emojisi — Telegram Forwarder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .bulk-table { width: 100%; border-collapse: collapse; }
+    .bulk-table th { text-align: left; font-size: .72rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 0 .6rem .6rem; }
+    .bulk-table td { padding: .4rem .4rem; vertical-align: middle; }
+    .row-input { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: .55rem .8rem; color: var(--text); font-size: .85rem; outline: none; width: 100%; }
+    .row-select { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: .55rem .8rem; color: var(--text); font-size: .85rem; outline: none; width: 100%; appearance: none; cursor: pointer; }
+    .btn-del-row { background: none; border: none; cursor: pointer; color: var(--muted); padding: .35rem; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+    .btn-del-row:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+    .group-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+    .teacher-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
+    .teacher-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: .75rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+      Forwarder
+    </div>
+    <span class="nav-section">Menü</span>
+    <a class="nav-item" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Panel
+    </a>
+    <a class="nav-item" href="/accounts/ekle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Hesap Ekle
+    </a>
+    <a class="nav-item" href="/rules/toplu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+      Toplu Kural
+    </a>
+    <a class="nav-item active" href="/teachers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      Hoca Emojisi
+    </a>
+    <div class="sidebar-footer"><div class="status-pill"><div class="pulse"></div>Sistem Aktif</div></div>
+  </aside>
+
+  <main class="main">
+    <div class="main-header">
+      <h1>👨‍🏫 Hoca & Lider Emojisi</h1>
+      <p>Belirlediğiniz hocalar gruba mesaj attığında hesapların otomatik emoji bırakmasını sağlayın.</p>
+    </div>
+
+    <!-- HOCA EKLEME -->
+    <div class="card">
+      <div class="card-title">➕ Yeni Hoca Ekle</div>
+      <form action="/teachers/add" method="POST" class="group-bar">
+        <div class="field" style="margin:0">
+          <label>Hoca Adı (Örn: Ali Hoca)</label>
+          <input class="row-input" type="text" name="name" required>
+        </div>
+        <div class="field" style="margin:0">
+          <label>Hangi Grupta Yazıyor (ID)</label>
+          <input class="row-input" type="text" name="source_chat_id" placeholder="-100..." required>
+        </div>
+        <div class="field" style="margin:0">
+          <label>Hocanın Kendi ID'si</label>
+          <input class="row-input" type="text" name="teacher_user_id" placeholder="12345678" required>
+        </div>
+        <div class="field" style="margin:0">
+          <label>Gecikme (Max Dk)</label>
+          <div style="display:flex;gap:.5rem">
+            <input class="row-input" type="number" name="delay_max_minutes" value="1" min="1" required>
+            <button class="btn btn-primary" type="submit">Ekle</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <!-- HOCA LİSTESİ -->
+    {% for teacher in teachers %}
+    <div class="teacher-card">
+      <div class="teacher-header">
+        <div>
+          <h2 style="margin:0;font-size:1.1rem;color:var(--text)">{{ teacher.name }}</h2>
+          <div style="font-size:.8rem;color:var(--muted);margin-top:.2rem">Grup: {{ teacher.source_chat_id }} • Hoca ID: {{ teacher.teacher_user_id }} • Süre: 1sn - {{ teacher.delay_max_minutes }}dk</div>
+        </div>
+        <button class="btn btn-secondary" style="color:var(--danger);border-color:rgba(239,68,68,.3)" onclick="deleteTeacher({{ teacher.id }})">Hocayı Sil</button>
+      </div>
+
+      <div>
+        <div style="font-size:.85rem;font-weight:600;margin-bottom:.5rem">Bu Hocaya Emoji Atacak Hesaplar:</div>
+        <table class="bulk-table" id="table-{{ teacher.id }}">
+          <thead>
+            <tr>
+              <th style="width:40%">Hesap Seçin</th>
+              <th>Emoji Listesi (Örn: 👍,🔥,❤️)</th>
+              <th style="width:40px"></th>
+            </tr>
+          </thead>
+          <tbody id="body-{{ teacher.id }}">
+            {% for r in teacher.reactions %}
+            <tr class="reaction-row">
+              <td>
+                <select class="row-select" data-acc>
+                  {% for acc in accounts %}
+                  <option value="{{ acc.id }}" {% if acc.id == r.account_id %}selected{% endif %}>{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input class="row-input" type="text" data-emj value="{{ r.emojis }}"></td>
+              <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">Sil</button></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        
+        <div style="margin-top:1rem;display:flex;gap:1rem">
+          <button class="btn btn-secondary btn-sm" onclick="addReactionRow({{ teacher.id }})">+ Hesap Ekle</button>
+          <button class="btn btn-success btn-sm" onclick="saveReactions({{ teacher.id }})" id="btn-save-{{ teacher.id }}">💾 Emojileri Kaydet</button>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if not teachers %}
+    <div style="text-align:center;padding:3rem;color:var(--muted)">Henüz hiç hoca eklenmemiş.</div>
+    {% endif %}
+
+  </main>
+</div>
+
+<script>
+const ACCOUNTS_HTML = `{% for acc in accounts %}<option value="{{ acc.id }}">{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>{% endfor %}`;
+
+function addReactionRow(teacherId) {
+  const tbody = document.getElementById(`body-${teacherId}`);
+  const tr = document.createElement('tr');
+  tr.className = 'reaction-row';
+  tr.innerHTML = `
+    <td><select class="row-select" data-acc>${ACCOUNTS_HTML}</select></td>
+    <td><input class="row-input" type="text" data-emj placeholder="👍,🔥,❤️"></td>
+    <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">Sil</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+
+async function saveReactions(teacherId) {
+  const tbody = document.getElementById(`body-${teacherId}`);
+  const rows = tbody.querySelectorAll('tr.reaction-row');
+  const payload = [];
+  
+  rows.forEach(tr => {
+    const acc = tr.querySelector('[data-acc]').value;
+    const emj = tr.querySelector('[data-emj]').value;
+    if (acc && emj) {
+      payload.push({ account_id: parseInt(acc), emojis: emj });
+    }
+  });
+
+  const btn = document.getElementById(`btn-save-${teacherId}`);
+  btn.innerHTML = 'Kaydediliyor...';
+  
+  try {
+    const res = await fetch(`/teachers/${teacherId}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      btn.innerHTML = '✅ Kaydedildi!';
+      setTimeout(() => btn.innerHTML = '💾 Emojileri Kaydet', 2000);
+    } else {
+      alert('Hata oluştu');
+      btn.innerHTML = '💾 Emojileri Kaydet';
+    }
+  } catch(e) {
+    alert(e);
+    btn.innerHTML = '💾 Emojileri Kaydet';
+  }
+}
+
+async function deleteTeacher(teacherId) {
+  if(!confirm('Bu hocayı tamamen silmek istediğinize emin misiniz?')) return;
+  try {
+    await fetch(`/teachers/delete/${teacherId}`, { method: 'POST' });
+    window.location.reload();
+  } catch(e) { alert(e); }
+}
+</script>
+</body>
+</html>

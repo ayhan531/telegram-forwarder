@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 import qrcode
 
 import database
-from database import SessionLocal, Rule, Account, MessageMapping, WordFilter, User, hash_password
+from database import SessionLocal, Rule, Account, MessageMapping, WordFilter, User, Teacher, TeacherReaction, hash_password
 
 from contextlib import asynccontextmanager
 
@@ -436,6 +436,24 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
 
         db = SessionLocal()
         try:
+            # --- HOCA EMOJISI (TEACHERS) ---
+            def _norm_id(v):
+                s = str(v).strip()
+                if s.startswith('-100'): return s[4:]
+                return s.lstrip('-')
+
+            teachers = db.query(Teacher).all()
+            for t in teachers:
+                if _norm_id(t.source_chat_id) == _norm_id(chat_id) and str(t.teacher_user_id) == str(sender_id):
+                    # Bu hocanın reaction ayarlarından BU hesap için olanı bul
+                    react_config = db.query(TeacherReaction).filter(
+                        TeacherReaction.teacher_id == t.id,
+                        TeacherReaction.account_id == account.id
+                    ).first()
+                    if react_config and react_config.emojis:
+                        print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak.")
+                        asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
+
             rules = db.query(Rule).filter(
                 Rule.source_chat_id == chat_id,
                 Rule.account_id == account.id,
@@ -1818,8 +1836,104 @@ async def bulk_copy_filter(request: Request, db: Session = Depends(get_db)):
         "reason": f"{skipped} hesapta aynı kaynak→hedef kural bulunamadı" if skipped else ""
     })
 
+async def delayed_react(account_id, chat_id, msg_id, emojis_str, delay_max_minutes):
+    import random
+    
+    # 1 sn ile delay_max_minutes (dk) arasında rastgele bekle
+    delay_sec = random.uniform(1, max(1, delay_max_minutes * 60))
+    print(f"[Emoji Task] Hesab {account_id} -> {delay_sec:.1f} saniye bekleyecek...")
+    await asyncio.sleep(delay_sec)
+    
+    emoji_list = [e.strip() for e in emojis_str.split(',') if e.strip()]
+    if not emoji_list:
+        return
+    
+    # 1 adet rastgele emoji seç
+    chosen = random.choice(emoji_list)
+    
+    client = clients.get(account_id)
+    if not client:
+        print(f"[Emoji Task] Hesap {account_id} aktif değil, emoji atılamadı.")
+        return
+    
+    try:
+        from telethon import functions, types
+        await client(functions.messages.SendReactionRequest(
+            peer=chat_id,
+            msg_id=msg_id,
+            reaction=[types.ReactionEmoji(emoticon=chosen)]
+        ))
+        print(f"[Emoji Task] ✅ {chosen} emojisi atıldı! (Hesap {account_id}, msg={msg_id})")
+    except Exception as e:
+        print(f"[Emoji Task] ❌ Emoji atılamadı (Hesap {account_id}): {e}")
 
-if __name__ == "__main__":
+
+# ── HOCA EMOJISI (TEACHERS) ──
+
+@app.get("/teachers", response_class=HTMLResponse)
+async def teachers_page(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    accounts = db.query(Account).filter(Account.user_id == user.id).all()
+    teachers = db.query(Teacher).all()
+    
+    return templates.TemplateResponse(request=request, name="teachers.html", context={"accounts": accounts, "teachers": teachers})
+
+@app.post("/teachers/add")
+async def add_teacher(
+    request: Request,
+    name: str = Form(...),
+    source_chat_id: str = Form(...),
+    teacher_user_id: str = Form(...),
+    delay_max_minutes: int = Form(1),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    teacher = Teacher(
+        name=name,
+        source_chat_id=source_chat_id,
+        teacher_user_id=teacher_user_id,
+        delay_max_minutes=delay_max_minutes
+    )
+    db.add(teacher)
+    db.commit()
+    return RedirectResponse(url="/teachers", status_code=303)
+
+@app.post("/teachers/delete/{t_id}")
+async def delete_teacher(request: Request, t_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    t = db.query(Teacher).filter(Teacher.id == t_id).first()
+    if t:
+        db.delete(t)
+        db.commit()
+    return JSONResponse({"ok": True})
+
+@app.post("/teachers/{t_id}/reactions")
+async def save_teacher_reactions(request: Request, t_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    body = await request.json()
+    
+    db.query(TeacherReaction).filter(TeacherReaction.teacher_id == t_id).delete()
+    
+    for row in body:
+        acc_id = row.get("account_id")
+        emojis = row.get("emojis", "").strip()
+        if acc_id and emojis:
+            db.add(TeacherReaction(teacher_id=t_id, account_id=acc_id, emojis=emojis))
+            
+    db.commit()
+    return JSONResponse({"ok": True})
+
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
