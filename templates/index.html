@@ -77,18 +77,42 @@
           Bağlı Hesaplar
           <span class="badge badge-blue">{{ accounts|length }}</span>
         </div>
-        <a href="/accounts/ekle" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          Hesap Ekle
-        </a>
+        <div class="flex gap-2">
+          <button onclick="pauseAll()" id="btnPauseAll" title="Tüm hesapların iletimini durdur"
+            style="padding:.45rem .85rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.4rem;transition:background .2s"
+            onmouseover="this.style.background='rgba(251,191,36,.2)'" onmouseout="this.style.background='rgba(251,191,36,.1)'">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            Hepsini Durdur
+          </button>
+          <button onclick="resumeAll()" id="btnResumeAll" title="Tüm hesapların iletimini başlat"
+            style="padding:.45rem .85rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.4rem;transition:background .2s"
+            onmouseover="this.style.background='rgba(74,222,128,.2)'" onmouseout="this.style.background='rgba(74,222,128,.1)'">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+            Hepsini Başlat
+          </button>
+          <a href="/accounts/ekle" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            Hesap Ekle
+          </a>
+        </div>
       </div>
 
       {% if accounts %}
+      <!-- Seçili hesaplar için toplu kontrol -->
+      <div id="bulkBar" style="display:none;margin-bottom:.75rem;padding:.6rem 1rem;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.25);border-radius:8px;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span id="bulkCount" style="font-size:.82rem;color:var(--text-muted)">0 hesap seçildi</span>
+        <button onclick="bulkAction('pause')" style="padding:.35rem .7rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">⏸ Seçilenleri Durdur</button>
+        <button onclick="bulkAction('resume')" style="padding:.35rem .7rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">▶ Seçilenleri Başlat</button>
+        <button onclick="clearSelection()" style="padding:.35rem .7rem;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text-muted);border-radius:6px;font-size:.76rem;cursor:pointer">✕ Seçimi Temizle</button>
+      </div>
+
       <div class="accounts-grid mt-3">
         {% for acc in accounts %}
-        <div class="account-card">
+        <div class="account-card" id="acccard-{{ acc.id }}" onclick="toggleSelect({{ acc.id }}, this)" style="cursor:pointer;position:relative;transition:border-color .2s">
+          <!-- Seçim göstergesi -->
+          <div id="sel-{{ acc.id }}" style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:transparent;transition:all .15s;pointer-events:none"></div>
           <div class="account-avatar">{{ (acc.name or '?')[0].upper() }}</div>
-          <div>
+          <div style="flex:1">
             <div class="account-name">{{ acc.name }}</div>
             <div class="account-phone">{{ acc.phone }}</div>
             {% if acc.id in active_client_ids %}
@@ -97,11 +121,19 @@
               <span style="font-size:.7rem;color:#f87171;font-weight:600" title="Oturumu süresi dolmuş, hesabı silin ve yeniden ekleyin">⚠ Oturum süresi dolmuş</span>
             {% endif %}
           </div>
-          <form action="/accounts/{{ acc.id }}/delete" method="POST" style="margin-left:auto">
-            <button class="account-del" type="submit" title="Sil">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-            </button>
-          </form>
+          <div class="flex flex-col gap-1" style="margin-left:auto" onclick="event.stopPropagation()">
+            <!-- Durdur / Başlat -->
+            <button onclick="pauseAccount({{ acc.id }}, this)" title="Bu hesabın iletimini durdur"
+              style="padding:.3rem .55rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.68rem;cursor:pointer;white-space:nowrap">⏸ Durdur</button>
+            <button onclick="resumeAccount({{ acc.id }}, this)" title="Bu hesabın iletimini başlat"
+              style="padding:.3rem .55rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.68rem;cursor:pointer;white-space:nowrap">▶ Başlat</button>
+            <!-- Sil -->
+            <form action="/accounts/{{ acc.id }}/delete" method="POST">
+              <button class="account-del" type="submit" title="Hesabı Sil" style="width:100%">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+              </button>
+            </form>
+          </div>
         </div>
         {% endfor %}
       </div>
@@ -254,6 +286,12 @@
                       <input type="text" name="replace_word" placeholder="Değiştir (boş=sil)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
                       <button type="submit" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
                     </form>
+                    {% if rule.filters %}
+                    <button onclick="openFilterCopy({{ rule.id }})"
+                      style="margin-top:.5rem;width:100%;padding:.35rem;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.1);color:#a5b4fc;border-radius:6px;font-size:.72rem;cursor:pointer;font-weight:600">
+                      📋 Bu filtreyi diğer hesaplara kopyala
+                    </button>
+                    {% endif %}
                   </div>
                 </details>
               </td>
@@ -359,7 +397,39 @@
   </div>
 </div>
 
+<!-- ── FİLTRE KOPYALAMA MODAL ── -->
+<div class="modal-overlay" id="filterCopyModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">📋 Filtreyi Kopyala</div>
+    <div class="modal-sub">Bu kuralın filtrelerini diğer hesapların aynı kaynak→hedef kuralına kopyalar</div>
+
+    <div style="margin-bottom:1rem">
+      <button id="btnFilterCopyAll" onclick="doFilterCopy('all')"
+        style="width:100%;padding:.6rem;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.1);color:#a5b4fc;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-bottom:.5rem">
+        🌐 Tüm Hesaplara Uygula
+      </button>
+      <div style="font-size:.75rem;color:var(--text-muted);text-align:center;margin-bottom:.75rem">— veya seç —</div>
+      <div id="filterAccList" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem">
+        {% for acc in accounts %}
+        <label style="display:flex;align-items:center;gap:.6rem;padding:.5rem .75rem;background:var(--surface2);border-radius:8px;cursor:pointer;font-size:.85rem">
+          <input type="checkbox" value="{{ acc.id }}" style="accent-color:#6366f1">
+          <div class="account-avatar" style="width:28px;height:28px;font-size:.75rem">{{ (acc.name or '?')[0].upper() }}</div>
+          {{ acc.name }}
+          <span style="font-size:.72rem;color:var(--text-muted);margin-left:auto">{{ acc.phone }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeFilterCopy()">İptal</button>
+      <button id="btnFilterCopySelected" class="btn btn-primary" onclick="doFilterCopy('selected')">✅ Seçilenlere Uygula</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── MESAJ LİNKİNDEN KİŞİ BUL MODAL ── -->
+
 <div class="modal-overlay" id="msgFinderModal">
   <div class="modal">
     <div class="modal-title">📎 Mesaj Linkinden Kişi Bul</div>
@@ -388,7 +458,181 @@
 </div>
 
 <script>
+// ── HESAP SEÇİM SİSTEMİ ──
+let selectedAccounts = new Set();
+
+function toggleSelect(accId, card) {
+  const sel = document.getElementById('sel-' + accId);
+  if (selectedAccounts.has(accId)) {
+    selectedAccounts.delete(accId);
+    sel.style.background = 'transparent';
+    sel.style.borderColor = 'var(--border)';
+    sel.innerHTML = '';
+    card.style.borderColor = '';
+    card.style.boxShadow = '';
+  } else {
+    selectedAccounts.add(accId);
+    sel.style.background = '#6366f1';
+    sel.style.borderColor = '#6366f1';
+    sel.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="white"><polyline points="20 6 9 17 4 12"/></svg>';
+    card.style.borderColor = 'rgba(99,102,241,.6)';
+    card.style.boxShadow = '0 0 0 2px rgba(99,102,241,.2)';
+  }
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulkBar');
+  const cnt = document.getElementById('bulkCount');
+  if (selectedAccounts.size > 0) {
+    bar.style.display = 'flex';
+    cnt.textContent = selectedAccounts.size + ' hesap seçildi';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearSelection() {
+  selectedAccounts.forEach(id => {
+    const card = document.getElementById('acccard-' + id);
+    const sel = document.getElementById('sel-' + id);
+    if (card) { card.style.borderColor = ''; card.style.boxShadow = ''; }
+    if (sel) { sel.style.background = 'transparent'; sel.style.borderColor = 'var(--border)'; sel.innerHTML = ''; }
+  });
+  selectedAccounts.clear();
+  updateBulkBar();
+}
+
+// ── TEK HESAP DURDUR/BAŞLAT ──
+async function pauseAccount(accId, btn) {
+  const orig = btn.innerHTML;
+  btn.innerHTML = '⏳'; btn.disabled = true;
+  try {
+    const res = await fetch('/accounts/' + accId + '/pause', {method:'POST'});
+    const d = await res.json();
+    if (d.ok) showToast('⏸ ' + d.paused_rules + ' kural durduruldu', 'warn');
+    else showToast('❌ ' + (d.error || 'Hata'), 'err');
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+  btn.innerHTML = orig; btn.disabled = false;
+}
+
+async function resumeAccount(accId, btn) {
+  const orig = btn.innerHTML;
+  btn.innerHTML = '⏳'; btn.disabled = true;
+  try {
+    const res = await fetch('/accounts/' + accId + '/resume', {method:'POST'});
+    const d = await res.json();
+    if (d.ok) showToast('▶ ' + d.resumed_rules + ' kural başlatıldı', 'ok');
+    else showToast('❌ ' + (d.error || 'Hata'), 'err');
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+  btn.innerHTML = orig; btn.disabled = false;
+}
+
+// ── TÜM HESAPLAR DURDUR/BAŞLAT ──
+async function pauseAll() {
+  const btn = document.getElementById('btnPauseAll');
+  const orig = btn.innerHTML; btn.disabled = true;
+  try {
+    const res = await fetch('/accounts/pause-all', {method:'POST'});
+    const d = await res.json();
+    if (d.ok) showToast('⏸ Tüm kurallar durduruldu (' + d.paused_rules + ' kural)', 'warn');
+    else showToast('❌ ' + (d.error || 'Hata'), 'err');
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+  btn.innerHTML = orig; btn.disabled = false;
+}
+
+async function resumeAll() {
+  const btn = document.getElementById('btnResumeAll');
+  const orig = btn.innerHTML; btn.disabled = true;
+  try {
+    const res = await fetch('/accounts/resume-all', {method:'POST'});
+    const d = await res.json();
+    if (d.ok) showToast('▶ Tüm kurallar başlatıldı (' + d.resumed_rules + ' kural)', 'ok');
+    else showToast('❌ ' + (d.error || 'Hata'), 'err');
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+  btn.innerHTML = orig; btn.disabled = false;
+}
+
+// ── SEÇİLEN HESAPLAR TOPLU DURDUR/BAŞLAT ──
+async function bulkAction(action) {
+  if (selectedAccounts.size === 0) return;
+  const ids = Array.from(selectedAccounts);
+  const url = action === 'pause' ? '/accounts/bulk-pause' : '/accounts/bulk-resume';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({account_ids: ids})
+    });
+    const d = await res.json();
+    const label = action === 'pause' ? '⏸ Durduruldu' : '▶ Başlatıldı';
+    const key = action === 'pause' ? 'paused_rules' : 'resumed_rules';
+    if (d.ok) showToast(label + ': ' + d[key] + ' kural', action === 'pause' ? 'warn' : 'ok');
+    else showToast('❌ ' + (d.error || 'Hata'), 'err');
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+}
+
+// ── FİLTRE KOPYALAMA ──
+let _filterCopyRuleId = null;
+
+function openFilterCopy(ruleId) {
+  _filterCopyRuleId = ruleId;
+  document.getElementById('filterCopyModal').classList.add('open');
+}
+function closeFilterCopy() {
+  document.getElementById('filterCopyModal').classList.remove('open');
+}
+
+async function doFilterCopy(mode) {
+  if (!_filterCopyRuleId) return;
+  const btn = document.getElementById('btnFilterCopyAll');
+  const btn2 = document.getElementById('btnFilterCopySelected');
+  [btn, btn2].forEach(b => { if(b) b.disabled = true; });
+
+  let body = { source_rule_id: _filterCopyRuleId };
+  if (mode === 'all') {
+    body.copy_all_accounts = true;
+  } else {
+    // Seçili hesap checkboxları
+    const checks = document.querySelectorAll('#filterAccList input:checked');
+    const ids = Array.from(checks).map(c => parseInt(c.value));
+    if (!ids.length) { showToast('Hesap seçmediniz', 'err'); [btn, btn2].forEach(b => { if(b) b.disabled = false; }); return; }
+    body.target_account_ids = ids;
+    body.copy_all_accounts = false;
+  }
+
+  try {
+    const res = await fetch('/filters/bulk-copy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await res.json();
+    if (d.ok) {
+      let msg = '📋 ' + d.filters_added + ' filtre kopyalandı';
+      if (d.accounts_skipped) msg += ' (' + d.accounts_skipped + ' hesapta eşleşen kural yok)';
+      showToast(msg, 'ok');
+      closeFilterCopy();
+    } else {
+      showToast('❌ ' + (d.error || 'Hata'), 'err');
+    }
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+  [btn, btn2].forEach(b => { if(b) b.disabled = false; });
+}
+
+// ── TOAST BİLDİRİM ──
+function showToast(msg, type) {
+  const colors = {ok:'rgba(74,222,128,.15)', warn:'rgba(251,191,36,.15)', err:'rgba(248,113,113,.15)'};
+  const borders = {ok:'rgba(74,222,128,.4)', warn:'rgba(251,191,36,.4)', err:'rgba(248,113,113,.4)'};
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:1.5rem;right:1.5rem;padding:.75rem 1.25rem;border-radius:10px;font-size:.85rem;font-weight:600;z-index:9999;background:${colors[type]||colors.ok};border:1px solid ${borders[type]||borders.ok};color:white;backdrop-filter:blur(8px);transition:opacity .4s;max-width:320px;word-break:break-word`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 400); }, 3000);
+}
+
 let _targetField = null, _foundId = null;
+
 
 function openFinder(fieldId) {
   _targetField = fieldId; _foundId = null;

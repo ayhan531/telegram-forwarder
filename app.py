@@ -1655,7 +1655,181 @@ async def find_sender(
         return JSONResponse({"error": f"Hata: {str(e)}"}, status_code=400)
 
 
+
+# ── HESAP DURDUR / DEVAM ETTİR ──
+
+@app.post("/accounts/{account_id}/pause")
+async def pause_account(account_id: int, request: Request, db: Session = Depends(get_db)):
+    """Hesabın tüm kurallarını durdurur (is_active=False). Hesabı SİLMEZ."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    acc = db.query(Account).filter(Account.id == account_id).first()
+    if not acc:
+        return JSONResponse({"error": "Hesap bulunamadı"}, status_code=404)
+    updated = db.query(Rule).filter(Rule.account_id == account_id).update({"is_active": False})
+    db.commit()
+    return JSONResponse({"ok": True, "paused_rules": updated})
+
+@app.post("/accounts/{account_id}/resume")
+async def resume_account(account_id: int, request: Request, db: Session = Depends(get_db)):
+    """Hesabın tüm kurallarını başlatır (is_active=True). Hesabı SİLMEZ."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    acc = db.query(Account).filter(Account.id == account_id).first()
+    if not acc:
+        return JSONResponse({"error": "Hesap bulunamadı"}, status_code=404)
+    updated = db.query(Rule).filter(Rule.account_id == account_id).update({"is_active": True})
+    db.commit()
+    return JSONResponse({"ok": True, "resumed_rules": updated})
+
+@app.post("/accounts/pause-all")
+async def pause_all_accounts(request: Request, db: Session = Depends(get_db)):
+    """Tüm hesapların tüm kurallarını durdurur."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    account_ids = [a.id for a in db.query(Account).filter(Account.user_id == user.id).all()]
+    if account_ids:
+        updated = db.query(Rule).filter(Rule.account_id.in_(account_ids)).update({"is_active": False}, synchronize_session=False)
+        db.commit()
+    else:
+        updated = 0
+    return JSONResponse({"ok": True, "paused_rules": updated})
+
+@app.post("/accounts/resume-all")
+async def resume_all_accounts(request: Request, db: Session = Depends(get_db)):
+    """Tüm hesapların tüm kurallarını başlatır."""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    account_ids = [a.id for a in db.query(Account).filter(Account.user_id == user.id).all()]
+    if account_ids:
+        updated = db.query(Rule).filter(Rule.account_id.in_(account_ids)).update({"is_active": True}, synchronize_session=False)
+        db.commit()
+    else:
+        updated = 0
+    return JSONResponse({"ok": True, "resumed_rules": updated})
+
+@app.post("/accounts/bulk-pause")
+async def bulk_pause_accounts(request: Request, db: Session = Depends(get_db)):
+    """Seçilen hesapların kurallarını durdurur. JSON body: {"account_ids": [1,2,3]}"""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    body = await request.json()
+    ids = body.get("account_ids", [])
+    if not ids:
+        return JSONResponse({"error": "Hesap seçilmedi"}, status_code=400)
+    # Sadece bu kullanıcının hesaplarını etkile
+    allowed = [a.id for a in db.query(Account).filter(Account.user_id == user.id, Account.id.in_(ids)).all()]
+    updated = db.query(Rule).filter(Rule.account_id.in_(allowed)).update({"is_active": False}, synchronize_session=False)
+    db.commit()
+    return JSONResponse({"ok": True, "paused_rules": updated})
+
+@app.post("/accounts/bulk-resume")
+async def bulk_resume_accounts(request: Request, db: Session = Depends(get_db)):
+    """Seçilen hesapların kurallarını başlatır. JSON body: {"account_ids": [1,2,3]}"""
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    body = await request.json()
+    ids = body.get("account_ids", [])
+    if not ids:
+        return JSONResponse({"error": "Hesap seçilmedi"}, status_code=400)
+    allowed = [a.id for a in db.query(Account).filter(Account.user_id == user.id, Account.id.in_(ids)).all()]
+    updated = db.query(Rule).filter(Rule.account_id.in_(allowed)).update({"is_active": True}, synchronize_session=False)
+    db.commit()
+    return JSONResponse({"ok": True, "resumed_rules": updated})
+
+
+# ── TOPLU FİLTRE UYGULA ──
+
+@app.post("/filters/bulk-copy")
+async def bulk_copy_filter(request: Request, db: Session = Depends(get_db)):
+    """
+    Bir kuralın filtrelerini seçilen hesapların aynı kaynak→hedef kurallarına kopyalar.
+    JSON body:
+    {
+      "source_rule_id": 5,        # Bu kuralın filtreleri kopyalanacak
+      "target_account_ids": [1,2,3],  # Bu hesaplara kopyala (boş = tüm hesaplar)
+      "copy_all_accounts": false  # true ise tüm hesaplara uygula
+    }
+    """
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    body = await request.json()
+    source_rule_id = body.get("source_rule_id")
+    target_account_ids = body.get("target_account_ids", [])
+    copy_all = body.get("copy_all_accounts", False)
+    
+    if not source_rule_id:
+        return JSONResponse({"error": "source_rule_id gerekli"}, status_code=400)
+    
+    # Kaynak kuralı al
+    source_rule = db.query(Rule).filter(Rule.id == source_rule_id).first()
+    if not source_rule:
+        return JSONResponse({"error": "Kaynak kural bulunamadı"}, status_code=404)
+    
+    source_filters = db.query(WordFilter).filter(WordFilter.rule_id == source_rule_id).all()
+    if not source_filters:
+        return JSONResponse({"error": "Kaynak kuralda filtre yok"}, status_code=400)
+    
+    # Hedef hesapları belirle
+    user_account_ids = [a.id for a in db.query(Account).filter(Account.user_id == user.id).all()]
+    
+    if copy_all:
+        effective_ids = user_account_ids
+    else:
+        effective_ids = [i for i in target_account_ids if i in user_account_ids]
+    
+    # Kaynak hesabı hariç tut (zaten var)
+    effective_ids = [i for i in effective_ids if i != source_rule.account_id]
+    
+    if not effective_ids:
+        return JSONResponse({"error": "Geçerli hedef hesap yok"}, status_code=400)
+    
+    added = 0
+    skipped = 0
+    
+    for acc_id in effective_ids:
+        # Bu hesabın aynı kaynak→hedef kuralını bul
+        target_rule = db.query(Rule).filter(
+            Rule.account_id == acc_id,
+            Rule.source_chat_id == source_rule.source_chat_id,
+            Rule.destination_id == source_rule.destination_id
+        ).first()
+        
+        if not target_rule:
+            skipped += 1
+            continue
+        
+        # Filtreleri ekle (zaten varsa atla)
+        existing_words = {f.search_word for f in db.query(WordFilter).filter(WordFilter.rule_id == target_rule.id).all()}
+        
+        for f in source_filters:
+            if f.search_word not in existing_words:
+                db.add(WordFilter(
+                    rule_id=target_rule.id,
+                    search_word=f.search_word,
+                    replace_word=f.replace_word
+                ))
+                added += 1
+    
+    db.commit()
+    return JSONResponse({
+        "ok": True,
+        "filters_added": added,
+        "accounts_skipped": skipped,
+        "reason": f"{skipped} hesapta aynı kaynak→hedef kural bulunamadı" if skipped else ""
+    })
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
