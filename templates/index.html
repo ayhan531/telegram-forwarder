@@ -414,13 +414,17 @@
         style="width:100%;padding:.6rem;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.1);color:#a5b4fc;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-bottom:.5rem">
         🌐 Tüm Hesaplara Uygula
       </button>
-      <div style="font-size:.75rem;color:var(--text-muted);text-align:center;margin-bottom:.75rem">— veya seç —</div>
-      <div id="filterAccList" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem">
+      <div style="font-size:.75rem;color:var(--text-muted);text-align:center;margin-bottom:.5rem">— veya seç —</div>
+      
+      <input type="text" id="filterModalSearch" placeholder="🔍 Hesap Ara..." onkeyup="searchFilterModal()"
+             style="width:100%;margin-bottom:.75rem;padding:.5rem;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);outline:none;font-size:.85rem">
+
+      <div id="filterAccList" style="max-height:250px;overflow-y:auto;display:flex;flex-direction:column;gap:.4rem;padding-right:.5rem">
         {% for acc in accounts %}
-        <label style="display:flex;align-items:center;gap:.6rem;padding:.5rem .75rem;background:var(--surface2);border-radius:8px;cursor:pointer;font-size:.85rem">
+        <label class="filter-acc-item" style="display:flex;align-items:center;gap:.6rem;padding:.5rem .75rem;background:var(--surface2);border-radius:8px;cursor:pointer;font-size:.85rem">
           <input type="checkbox" value="{{ acc.id }}" style="accent-color:#6366f1">
           <div class="account-avatar" style="width:28px;height:28px;font-size:.75rem">{{ (acc.name or '?')[0].upper() }}</div>
-          {{ acc.name }}
+          <span class="acc-name-text">{{ acc.name }}</span>
           <span style="font-size:.72rem;color:var(--text-muted);margin-left:auto">{{ acc.phone }}</span>
         </label>
         {% endfor %}
@@ -580,6 +584,15 @@ async function bulkAction(action) {
 
 // ── FİLTRE KOPYALAMA ──
 let _filterCopyRuleId = null;
+
+function searchFilterModal() {
+  const q = document.getElementById('filterModalSearch').value.toLowerCase();
+  const items = document.querySelectorAll('.filter-acc-item');
+  items.forEach(item => {
+    const text = item.querySelector('.acc-name-text').textContent.toLowerCase();
+    item.style.display = text.includes(q) ? 'flex' : 'none';
+  });
+}
 
 function openFilterCopy(ruleId) {
   _filterCopyRuleId = ruleId;
