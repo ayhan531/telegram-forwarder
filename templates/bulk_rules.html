@@ -185,7 +185,7 @@
       <label style="font-size:.75rem">Aramak için hangi hesabı kullanalım?</label>
       <select id="finderAccount" class="row-select">
         {% for acc in accounts %}
-        <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+        <option value="{{ acc.id }}">{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>
         {% endfor %}
       </select>
     </div>
@@ -218,7 +218,7 @@
       <label style="font-size:.75rem">Aramak için hangi hesabı kullanalım?</label>
       <select id="msgFinderAccount" class="row-select">
         {% for acc in accounts %}
-        <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+        <option value="{{ acc.id }}">{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>
         {% endfor %}
       </select>
     </div>
@@ -258,8 +258,8 @@ function addRow() {
   tr.id = 'row-' + rowCount;
   tr.dataset.rowId = rowCount;
 
-  const accOptions = ACCOUNTS.map(a =>
-    `<option value="${a.id}">${a.name} (${a.phone})</option>`
+  const accOptions = ACCOUNTS.map((a, i) =>
+    `<option value="${a.id}">${i + 1}- ${a.name} (${a.phone})</option>`
   ).join('');
 
   tr.innerHTML = `

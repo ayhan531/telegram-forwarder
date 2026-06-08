@@ -167,7 +167,7 @@
             <label>Hangi hesap iletecek?</label>
             <select name="account_id" id="account_id" required>
               {% for acc in accounts %}
-              <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+              <option value="{{ acc.id }}">{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>
               {% endfor %}
             </select>
             {% if not accounts %}
