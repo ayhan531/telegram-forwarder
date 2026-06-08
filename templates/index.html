@@ -108,29 +108,30 @@
 
       <div class="accounts-grid mt-3">
         {% for acc in accounts %}
-        <div class="account-card" id="acccard-{{ acc.id }}" onclick="toggleSelect({{ acc.id }}, this)" style="cursor:pointer;position:relative;transition:border-color .2s">
+        <div class="account-card" id="acccard-{{ acc.id }}" style="position:relative;cursor:pointer;transition:border-color .2s,box-shadow .2s" onclick="toggleSelect({{ acc.id }}, this)">
           <!-- Seçim göstergesi -->
-          <div id="sel-{{ acc.id }}" style="position:absolute;top:8px;right:8px;width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:transparent;transition:all .15s;pointer-events:none"></div>
+          <div id="sel-{{ acc.id }}" style="position:absolute;top:6px;left:6px;width:16px;height:16px;border-radius:50%;border:2px solid var(--border);background:transparent;transition:all .15s;pointer-events:none;z-index:2"></div>
           <div class="account-avatar">{{ (acc.name or '?')[0].upper() }}</div>
-          <div style="flex:1">
-            <div class="account-name">{{ acc.name }}</div>
+          <div style="flex:1;min-width:0">
+            <div class="account-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ acc.name }}</div>
             <div class="account-phone">{{ acc.phone }}</div>
             {% if acc.id in active_client_ids %}
-              <span style="font-size:.7rem;color:#4ade80;font-weight:600">● Bağlı</span>
+              <span style="font-size:.65rem;color:#4ade80;font-weight:600">● Bağlı</span>
             {% else %}
-              <span style="font-size:.7rem;color:#f87171;font-weight:600" title="Oturumu süresi dolmuş, hesabı silin ve yeniden ekleyin">⚠ Oturum süresi dolmuş</span>
+              <span style="font-size:.65rem;color:#f87171;font-weight:600">⚠ Bağlanıyor...</span>
             {% endif %}
           </div>
-          <div class="flex flex-col gap-1" style="margin-left:auto" onclick="event.stopPropagation()">
-            <!-- Durdur / Başlat -->
-            <button onclick="pauseAccount({{ acc.id }}, this)" title="Bu hesabın iletimini durdur"
-              style="padding:.3rem .55rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.68rem;cursor:pointer;white-space:nowrap">⏸ Durdur</button>
-            <button onclick="resumeAccount({{ acc.id }}, this)" title="Bu hesabın iletimini başlat"
-              style="padding:.3rem .55rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.68rem;cursor:pointer;white-space:nowrap">▶ Başlat</button>
-            <!-- Sil -->
+          <!-- Sağ taraf: sadece 3 ikon butonu -->
+          <div style="display:flex;flex-direction:column;gap:3px;margin-left:.5rem;flex-shrink:0" onclick="event.stopPropagation()">
+            <button onclick="pauseAccount({{ acc.id }}, this)" title="Durdur"
+              style="width:28px;height:28px;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.08);color:#fbbf24;border-radius:6px;cursor:pointer;font-size:.75rem;display:flex;align-items:center;justify-content:center;transition:background .15s"
+              onmouseover="this.style.background='rgba(251,191,36,.2)'" onmouseout="this.style.background='rgba(251,191,36,.08)'">⏸</button>
+            <button onclick="resumeAccount({{ acc.id }}, this)" title="Başlat"
+              style="width:28px;height:28px;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.08);color:#4ade80;border-radius:6px;cursor:pointer;font-size:.75rem;display:flex;align-items:center;justify-content:center;transition:background .15s"
+              onmouseover="this.style.background='rgba(74,222,128,.2)'" onmouseout="this.style.background='rgba(74,222,128,.08)'">▶</button>
             <form action="/accounts/{{ acc.id }}/delete" method="POST">
-              <button class="account-del" type="submit" title="Hesabı Sil" style="width:100%">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+              <button class="account-del" type="submit" title="Hesabı Sil" style="width:28px;height:28px">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
               </button>
             </form>
           </div>
@@ -144,6 +145,7 @@
       </div>
       {% endif %}
     </div>
+
 
     <!-- ── YENİ KURAL EKLE ── -->
     <div class="card">
