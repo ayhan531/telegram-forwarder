@@ -416,16 +416,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             return
 
         if not authorized:
-            print(f"[{account.name}] Oturum geçersiz. Lütfen tekrar giriş yapın.")
-            try:
-                db2 = SessionLocal()
-                acc_db = db2.query(Account).filter(Account.id == account.id).first()
-                if acc_db:
-                    acc_db.is_active = False
-                    db2.commit()
-                db2.close()
-            except Exception:
-                pass
+            print(f"[{account.name}] Oturum geçersiz veya süresi dolmuş — atlanıyor (hesap silinmedi).")
             await client.disconnect()
             return
 
