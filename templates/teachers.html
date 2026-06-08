@@ -92,35 +92,59 @@
 
       <div>
         <div style="font-size:.85rem;font-weight:600;margin-bottom:.5rem">Bu Hocaya Emoji Atacak Hesaplar:</div>
-        <table class="bulk-table" id="table-{{ teacher.id }}">
-          <thead>
-            <tr>
-              <th style="width:40%">Hesap Seçin</th>
-              <th>Emoji Listesi (Örn: 👍,🔥,❤️)</th>
-              <th style="width:40px"></th>
-            </tr>
-          </thead>
-          <tbody id="body-{{ teacher.id }}">
-            {% for r in teacher.reactions %}
-            <tr class="reaction-row">
-              <td>
-                <select class="row-select" data-acc>
-                  {% for acc in accounts %}
-                  <option value="{{ acc.id }}" {% if acc.id == r.account_id %}selected{% endif %}>{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>
-                  {% endfor %}
-                </select>
-              </td>
-              <td><input class="row-input" type="text" data-emj value="{{ r.emojis }}"></td>
-              <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">Sil</button></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
         
-        <div style="margin-top:1rem;display:flex;gap:1rem">
-          <button class="btn btn-secondary btn-sm" onclick="addReactionRow({{ teacher.id }})">+ Hesap Ekle</button>
-          <button class="btn btn-success btn-sm" onclick="saveReactions({{ teacher.id }})" id="btn-save-{{ teacher.id }}">💾 Emojileri Kaydet</button>
+        <!-- MEVCUT EMOJİLER LİSTESİ -->
+        {% if teacher.reactions %}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));gap:.5rem;margin-bottom:1rem">
+          {% for r in teacher.reactions %}
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:.5rem .75rem;display:flex;justify-content:space-between;align-items:center;font-size:.8rem">
+            <div>
+              {% for acc in accounts %}
+                {% if acc.id == r.account_id %}
+                  <strong>{{ acc.name }}</strong> <span class="text-muted">({{ acc.phone }})</span>
+                {% endif %}
+              {% endfor %}
+              <div style="color:var(--primary);margin-top:.2rem">{{ r.emojis }}</div>
+            </div>
+            <button onclick="deleteReaction({{ teacher.id }}, {{ r.account_id }})" class="btn-del-row">Sil</button>
+          </div>
+          {% endfor %}
         </div>
+        {% else %}
+        <div style="font-size:.8rem;color:var(--muted);margin-bottom:1rem">Henüz hesap eklenmemiş.</div>
+        {% endif %}
+
+        <!-- YENİ HESAP EKLEME ALANI (TOPLU) -->
+        <details style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:.75rem">
+          <summary style="cursor:pointer;font-weight:600;font-size:.85rem;color:var(--primary)">+ Yeni Hesaplar Ekle (Toplu Seçim)</summary>
+          <div style="margin-top:1rem">
+            
+            <input type="text" id="search-acc-{{ teacher.id }}" placeholder="🔍 Hesap ara..." onkeyup="searchAccounts({{ teacher.id }})" class="row-input" style="margin-bottom:.5rem">
+            
+            <div style="display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:.5rem;padding:0 .2rem">
+              <span class="text-muted">Emoji atmasını istediğiniz hesapları işaretleyin:</span>
+              <a href="javascript:void(0)" onclick="selectAll({{ teacher.id }})" style="color:var(--primary)">Hepsini Seç</a>
+            </div>
+
+            <div id="list-acc-{{ teacher.id }}" style="max-height:180px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.5rem;display:flex;flex-direction:column;gap:.3rem;margin-bottom:1rem">
+              {% for acc in accounts %}
+              <label class="acc-check-item" style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer;padding:.2rem">
+                <input type="checkbox" value="{{ acc.id }}" class="check-acc-{{ teacher.id }}" style="accent-color:var(--primary)">
+                <span class="acc-name">{{ acc.name }}</span> <span class="text-muted">({{ acc.phone }})</span>
+              </label>
+              {% endfor %}
+            </div>
+
+            <div class="field" style="margin-bottom:1rem">
+              <label>Atılacak Emojiler (Virgülle Ayırın)</label>
+              <input type="text" id="emojis-{{ teacher.id }}" class="row-input" placeholder="👍,🔥,❤️" required>
+            </div>
+
+            <button class="btn btn-success" onclick="addReactionsBulk({{ teacher.id }})" id="btn-save-{{ teacher.id }}">💾 Seçili Hesaplara Kaydet</button>
+
+          </div>
+        </details>
+
       </div>
     </div>
     {% endfor %}
@@ -133,52 +157,63 @@
 </div>
 
 <script>
-const ACCOUNTS_HTML = `{% for acc in accounts %}<option value="{{ acc.id }}">{{ loop.index }}- {{ acc.name }} ({{ acc.phone }})</option>{% endfor %}`;
-
-function addReactionRow(teacherId) {
-  const tbody = document.getElementById(`body-${teacherId}`);
-  const tr = document.createElement('tr');
-  tr.className = 'reaction-row';
-  tr.innerHTML = `
-    <td><select class="row-select" data-acc>${ACCOUNTS_HTML}</select></td>
-    <td><input class="row-input" type="text" data-emj placeholder="👍,🔥,❤️"></td>
-    <td><button type="button" class="btn-del-row" onclick="this.closest('tr').remove()">Sil</button></td>
-  `;
-  tbody.appendChild(tr);
+function searchAccounts(teacherId) {
+  const q = document.getElementById(`search-acc-${teacherId}`).value.toLowerCase();
+  const items = document.querySelectorAll(`#list-acc-${teacherId} .acc-check-item`);
+  items.forEach(item => {
+    const text = item.querySelector('.acc-name').textContent.toLowerCase();
+    item.style.display = text.includes(q) ? 'flex' : 'none';
+  });
 }
 
-async function saveReactions(teacherId) {
-  const tbody = document.getElementById(`body-${teacherId}`);
-  const rows = tbody.querySelectorAll('tr.reaction-row');
-  const payload = [];
+function selectAll(teacherId) {
+  const checks = document.querySelectorAll(`.check-acc-${teacherId}`);
+  let allChecked = Array.from(checks).every(c => c.checked);
+  checks.forEach(c => c.checked = !allChecked);
+}
+
+async function deleteReaction(teacherId, accountId) {
+  if(!confirm('Silmek istediğinize emin misiniz?')) return;
   
-  rows.forEach(tr => {
-    const acc = tr.querySelector('[data-acc]').value;
-    const emj = tr.querySelector('[data-emj]').value;
-    if (acc && emj) {
-      payload.push({ account_id: parseInt(acc), emojis: emj });
-    }
-  });
+  try {
+    const res = await fetch(`/teachers/${teacherId}/reactions/delete/${accountId}`, { method: 'POST' });
+    if(res.ok) window.location.reload();
+    else alert('Hata oluştu');
+  } catch(e) { alert(e); }
+}
+
+async function addReactionsBulk(teacherId) {
+  const checks = document.querySelectorAll(`.check-acc-${teacherId}:checked`);
+  const emj = document.getElementById(`emojis-${teacherId}`).value.trim();
+  
+  if(checks.length === 0) { alert('Lütfen en az bir hesap seçin!'); return; }
+  if(!emj) { alert('Lütfen atılacak emojileri girin!'); return; }
+
+  const payload = Array.from(checks).map(c => ({
+    account_id: parseInt(c.value),
+    emojis: emj
+  }));
 
   const btn = document.getElementById(`btn-save-${teacherId}`);
+  const oldText = btn.innerHTML;
   btn.innerHTML = 'Kaydediliyor...';
   
   try {
-    const res = await fetch(`/teachers/${teacherId}/reactions`, {
+    const res = await fetch(`/teachers/${teacherId}/reactions/add_bulk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
     if (res.ok) {
       btn.innerHTML = '✅ Kaydedildi!';
-      setTimeout(() => btn.innerHTML = '💾 Emojileri Kaydet', 2000);
+      setTimeout(() => window.location.reload(), 800);
     } else {
       alert('Hata oluştu');
-      btn.innerHTML = '💾 Emojileri Kaydet';
+      btn.innerHTML = oldText;
     }
   } catch(e) {
     alert(e);
-    btn.innerHTML = '💾 Emojileri Kaydet';
+    btn.innerHTML = oldText;
   }
 }
 

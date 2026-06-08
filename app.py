@@ -23,6 +23,8 @@ from contextlib import asynccontextmanager
 
 load_dotenv()
 
+_processed_albums = {}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Uygulama başlangıç ve bitiş olayları."""
@@ -451,8 +453,23 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         TeacherReaction.account_id == account.id
                     ).first()
                     if react_config and react_config.emojis:
-                        print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak.")
-                        asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
+                        grouped_id = event.message.grouped_id
+                        should_react = True
+                        if grouped_id:
+                            cache_key = (account.id, grouped_id)
+                            now = time.time()
+                            if cache_key in _processed_albums and now - _processed_albums[cache_key] < 300:
+                                should_react = False
+                            else:
+                                _processed_albums[cache_key] = now
+                                # Cleanup old cache
+                                keys_to_delete = [k for k, v in _processed_albums.items() if now - v > 300]
+                                for k in keys_to_delete:
+                                    del _processed_albums[k]
+                        
+                        if should_react:
+                            print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak. (grouped_id={grouped_id})")
+                            asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
 
             rules = db.query(Rule).filter(
                 Rule.source_chat_id == chat_id,
@@ -521,10 +538,10 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             try:
                                 r_sender = await reply_msg.get_sender()
                                 r_name = getattr(r_sender, 'first_name', '') or getattr(r_sender, 'title', '') or 'Biri'
-                                r_text = reply_msg.message or "[Medya]"
+                                r_text = reply_msg.message or "[Medya/Görsel]"
                                 if len(r_text) > 80:
                                     r_text = r_text[:80] + "..."
-                                reply_quote_text = f"💬 {r_name}:\n\"{r_text}\"\n\n"
+                                reply_quote_text = f"┏ 💬 {r_name} yazmıştı:\n┗ ❝{r_text}❞\n\n"
                             except Exception:
                                 pass
 
@@ -1915,22 +1932,39 @@ async def delete_teacher(request: Request, t_id: int, db: Session = Depends(get_
         db.commit()
     return JSONResponse({"ok": True})
 
-@app.post("/teachers/{t_id}/reactions")
-async def save_teacher_reactions(request: Request, t_id: int, db: Session = Depends(get_db)):
+@app.post("/teachers/{t_id}/reactions/add_bulk")
+async def add_teacher_reactions_bulk(request: Request, t_id: int, db: Session = Depends(get_db)):
     user = get_current_user(request, db)
     if not user:
         return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
     
     body = await request.json()
-    
-    db.query(TeacherReaction).filter(TeacherReaction.teacher_id == t_id).delete()
-    
     for row in body:
         acc_id = row.get("account_id")
         emojis = row.get("emojis", "").strip()
         if acc_id and emojis:
-            db.add(TeacherReaction(teacher_id=t_id, account_id=acc_id, emojis=emojis))
+            existing = db.query(TeacherReaction).filter(
+                TeacherReaction.teacher_id == t_id,
+                TeacherReaction.account_id == acc_id
+            ).first()
+            if existing:
+                existing.emojis = emojis
+            else:
+                db.add(TeacherReaction(teacher_id=t_id, account_id=acc_id, emojis=emojis))
             
+    db.commit()
+    return JSONResponse({"ok": True})
+
+@app.post("/teachers/{t_id}/reactions/delete/{acc_id}")
+async def delete_teacher_reaction(request: Request, t_id: int, acc_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+        
+    db.query(TeacherReaction).filter(
+        TeacherReaction.teacher_id == t_id,
+        TeacherReaction.account_id == acc_id
+    ).delete()
     db.commit()
     return JSONResponse({"ok": True})
 
