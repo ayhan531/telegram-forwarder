@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
         acc_count = c.execute("SELECT count(*) FROM accounts").fetchone()[0]
         if acc_count == 0:
             print("[System] 🚨 Veritabanı boş. Yedek indiriliyor ve enjekte ediliyor...")
-            urllib.request.urlretrieve("https://litter.catbox.moe/8spg0a.gz", "backup.tar.gz")
+            urllib.request.urlretrieve("https://litter.catbox.moe/wk14ee.gz", "backup.tar.gz")
             os.system("tar -xzvf backup.tar.gz")
             os.system(f"mkdir -p {data_dir}")
             os.system(f"cp -r *.session {data_dir}/")
