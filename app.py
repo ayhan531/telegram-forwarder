@@ -445,8 +445,10 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 return s.lstrip('-')
 
             teachers = db.query(Teacher).all()
+            matched_teacher = None
             for t in teachers:
                 if _norm_id(t.source_chat_id) == _norm_id(chat_id) and str(t.teacher_user_id) == str(sender_id):
+                    matched_teacher = t
                     # Bu hocanın reaction ayarlarından BU hesap için olanı bul
                     react_config = db.query(TeacherReaction).filter(
                         TeacherReaction.teacher_id == t.id,
@@ -630,6 +632,23 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         db.add(new_mapping)
                         db.commit()
                         print(f"[{account.name}] ✅ İletildi: {chat_id} msg={event.id} → {rule.destination_id} msg={sent_msg.id}")
+
+                        # ── HEDEF GRUP EMOJİSİ (Yönlendirilen Mesaj İçin) ──
+                        if matched_teacher:
+                            grouped_id = event.message.grouped_id
+                            should_react_dest = True
+                            if grouped_id:
+                                cache_key = ("dest_react", rule.destination_id, grouped_id)
+                                now = time.time()
+                                if cache_key in _processed_albums and now - _processed_albums[cache_key] < 300:
+                                    should_react_dest = False
+                                else:
+                                    _processed_albums[cache_key] = now
+                            
+                            if should_react_dest:
+                                all_react_configs = db.query(TeacherReaction).filter(TeacherReaction.teacher_id == matched_teacher.id).all()
+                                for r_conf in all_react_configs:
+                                    asyncio.create_task(delayed_react(r_conf.account_id, int(rule.destination_id), sent_msg.id, r_conf.emojis, matched_teacher.delay_max_minutes))
 
                 except Exception as e:
                     print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {e}")
