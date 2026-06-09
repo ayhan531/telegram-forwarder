@@ -1887,6 +1887,11 @@ async def delayed_react(account_id, chat_id, msg_id, emojis_str, delay_max_minut
     # 1 adet rastgele emoji seç
     chosen = random.choice(emoji_list)
     
+    # Telegram sadece baz emojileri reaksiyon olarak kabul eder. (Örn: 👏🏻 kabul etmez, 👏 kabul eder).
+    # Ten rengi vb. eklentileri (modifiers) temizleyelim:
+    for m in ['\U0001f3fb', '\U0001f3fc', '\U0001f3fd', '\U0001f3fe', '\U0001f3ff']:
+        chosen = chosen.replace(m, '')
+
     client = clients.get(account_id)
     if not client:
         print(f"[Emoji Task] Hesap {account_id} aktif değil, emoji atılamadı.")
