@@ -128,10 +128,19 @@
 
             <div id="list-acc-{{ teacher.id }}" style="max-height:180px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.5rem;display:flex;flex-direction:column;gap:.3rem;margin-bottom:1rem">
               {% for acc in accounts %}
-              <label class="acc-check-item" style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer;padding:.2rem">
-                <input type="checkbox" value="{{ acc.id }}" class="check-acc-{{ teacher.id }}" style="accent-color:var(--primary)">
-                <span class="acc-name">{{ acc.name }}</span> <span class="text-muted">({{ acc.phone }})</span>
-              </label>
+                {% set ns = namespace(is_assigned=false) %}
+                {% for r in teacher.reactions %}
+                  {% if r.account_id == acc.id %}
+                    {% set ns.is_assigned = true %}
+                  {% endif %}
+                {% endfor %}
+                
+                {% if not ns.is_assigned %}
+                  <label class="acc-check-item" style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;cursor:pointer;padding:.2rem">
+                    <input type="checkbox" value="{{ acc.id }}" class="check-acc-{{ teacher.id }}" style="accent-color:var(--primary)">
+                    <span class="acc-name">{{ acc.name }}</span> <span class="text-muted">({{ acc.phone }})</span>
+                  </label>
+                {% endif %}
               {% endfor %}
             </div>
 
