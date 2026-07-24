@@ -485,6 +485,25 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 if rule.sender_id and rule.sender_id != sender_id:
                     continue
 
+                # ── Global içerik filtreleri (tüm kurallar için geçerli) ──
+                _raw_text = event.message.message or ""
+
+                # 1. @ mention içeren mesajları engelle (@kullanici gibi)
+                if '@' in _raw_text:
+                    print(f"[{account.name}] 🚫 @ mention içeriği engellendi (msg={event.id})")
+                    continue
+
+                # 2. t.me/ linki içeren mesajları engelle
+                if re.search(r't\.me/', _raw_text, re.IGNORECASE):
+                    print(f"[{account.name}] 🚫 t.me linki engellendi (msg={event.id})")
+                    continue
+
+                # 3. Sadece #reklam içeren mesajları engelle
+                #    (#AKFIS, #BTC gibi hisse/kripto kodları ETKİLENMEZ)
+                if re.search(r'#[Rr][Ee][Kk][Ll][Aa][Mm]\b', _raw_text):
+                    print(f"[{account.name}] 🚫 #reklam içeriği engellendi (msg={event.id})")
+                    continue
+
                 # ── Yanıt (reply) eşleştirmesi ──
                 reply_to_msg_id = None
                 reply_quote_text = ""
