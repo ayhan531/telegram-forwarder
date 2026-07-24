@@ -1,12 +1,14 @@
 import os
 import io
+import zipfile
+import datetime
 import re
 import base64
 import uuid
 import asyncio
 import glob
 from fastapi import FastAPI, Request, Form, Depends, Query
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -768,6 +770,48 @@ async def health_check():
 @app.head("/")
 async def root_head():
     return HTMLResponse(content="", status_code=200)
+
+# ── BACKUP ──
+
+@app.get("/admin/backup")
+async def download_backup(request: Request, secret: str = Query("")):
+    """
+    Tüm veritabanı ve session dosyalarını ZIP olarak indir.
+    Kullanım: /admin/backup?secret=BACKUP_SECRET
+    """
+    backup_secret = os.environ.get("BACKUP_SECRET", "tg-backup-2026-secure")
+    if secret != backup_secret:
+        return HTMLResponse(content="<h1>403 Yetkisiz</h1>", status_code=403)
+
+    buf = io.BytesIO()
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Veritabanı
+        db_path = os.path.join(_DATA_DIR, "telegram_forwarder.db")
+        if os.path.exists(db_path):
+            zf.write(db_path, "telegram_forwarder.db")
+
+        # Tüm .session dosyaları
+        session_files = glob.glob(os.path.join(_DATA_DIR, "*.session"))
+        for sf in session_files:
+            zf.write(sf, os.path.basename(sf))
+
+        # WAL / SHM dosyaları (varsa)
+        for ext in [".db-wal", ".db-shm"]:
+            extra = db_path + ext
+            if os.path.exists(extra):
+                zf.write(extra, "telegram_forwarder.db" + ext)
+
+    buf.seek(0)
+    filename = f"tg_backup_{timestamp}.zip"
+    print(f"[Backup] Yedek indirildi: {filename} ({buf.getbuffer().nbytes} bytes)")
+
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
 # ── ANA PANEL ──
 
