@@ -805,6 +805,15 @@ async def download_backup(request: Request, secret: str = Query("")):
     buf = io.BytesIO()
     timestamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
+    # WAL checkpoint yaparak tüm verilerin ana veritabanı dosyasına yazılmasını sağla
+    try:
+        from database import engine as _engine
+        with _engine.connect() as _c:
+            _c.execute(text("PRAGMA wal_checkpoint(FULL)"))
+            _c.commit()
+    except Exception as _e:
+        print(f"[Backup] WAL checkpoint uyarısı: {_e}")
+
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # Veritabanı
         db_path = os.path.join(_DATA_DIR, "telegram_forwarder.db")
@@ -817,7 +826,7 @@ async def download_backup(request: Request, secret: str = Query("")):
             zf.write(sf, os.path.basename(sf))
 
         # WAL / SHM dosyaları (varsa)
-        for ext in [".db-wal", ".db-shm"]:
+        for ext in ["-wal", "-shm"]:
             extra = db_path + ext
             if os.path.exists(extra):
                 zf.write(extra, "telegram_forwarder.db" + ext)
