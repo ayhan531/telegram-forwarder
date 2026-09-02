@@ -1292,6 +1292,7 @@ async def add_rule(
     account_id: int = Form(...),
     source_chat_id: str = Form(...),
     sender_id: str = Form(None),
+    sender_name: str = Form(None),
     destination_id: str = Form(...),
     description: str = Form(None),
     db: Session = Depends(get_db)
@@ -1323,6 +1324,7 @@ async def add_rule(
         account_id=account_id,
         source_chat_id=source_chat_id,
         sender_id=sender_id,
+        sender_name=sender_name.strip() if sender_name and sender_name.strip() else None,
         destination_id=destination_id,
         description=description
     )
@@ -1599,6 +1601,7 @@ async def bulk_rules_add(request: Request, db: Session = Depends(get_db)):
     for row in rows:
         acc_id  = int(row.get("account_id", 0))
         sender  = row.get("sender_id", "").strip() or None
+        sender_name = row.get("sender_name", "").strip() or None
 
         client = clients.get(acc_id)
         if not client:
@@ -1613,6 +1616,7 @@ async def bulk_rules_add(request: Request, db: Session = Depends(get_db)):
             account_id=acc_id,
             source_chat_id=src,
             sender_id=sid,
+            sender_name=sender_name,
             destination_id=dest,
             description=description
         )
@@ -2136,6 +2140,7 @@ async def edit_rule(
     source_chat_id: str = Form(...),
     destination_id: str = Form(...),
     sender_id: str = Form(None),
+    sender_name: str = Form(None),
     description: str = Form(None),
     block_links: bool = Form(False),
     replace_link: str = Form(None),
@@ -2153,6 +2158,7 @@ async def edit_rule(
             rule.source_chat_id = source_chat_id.strip()
             rule.destination_id = destination_id.strip()
             rule.sender_id = sender_id.strip() if sender_id and sender_id.strip() else None
+            rule.sender_name = sender_name.strip() if sender_name and sender_name.strip() else None
             rule.description = description.strip() if description and description.strip() else None
             rule.block_links = block_links
             rule.replace_link = replace_link.strip() if replace_link and replace_link.strip() else None
@@ -2169,6 +2175,7 @@ async def edit_rule_path(
     source_chat_id: str = Form(...),
     destination_id: str = Form(...),
     sender_id: str = Form(None),
+    sender_name: str = Form(None),
     description: str = Form(None),
     block_links: bool = Form(False),
     replace_link: str = Form(None),
@@ -2181,6 +2188,7 @@ async def edit_rule_path(
         source_chat_id=source_chat_id,
         destination_id=destination_id,
         sender_id=sender_id,
+        sender_name=sender_name,
         description=description,
         block_links=block_links,
         replace_link=replace_link,
@@ -2299,6 +2307,7 @@ async def hukumdar_copy_account(
                     account_id=new_acc.id,
                     source_chat_id=r.source_chat_id,
                     sender_id=r.sender_id,
+                    sender_name=r.sender_name,
                     destination_id=r.destination_id,
                     is_active=r.is_active,
                     description=r.description,
@@ -2345,6 +2354,7 @@ async def hukumdar_batch_transfer(
                         account_id=first_target_acc.id,
                         source_chat_id=r.source_chat_id,
                         sender_id=r.sender_id,
+                        sender_name=r.sender_name,
                         destination_id=r.destination_id,
                         is_active=r.is_active,
                         description=f"{r.description or ''} (Kopya)",
@@ -2375,6 +2385,7 @@ async def hukumdar_copy_rule(
             account_id=target_account_id,
             source_chat_id=r.source_chat_id,
             sender_id=r.sender_id,
+            sender_name=r.sender_name,
             destination_id=r.destination_id,
             is_active=r.is_active,
             description=r.description,
@@ -2611,6 +2622,110 @@ async def delete_ignored_member(
         db.commit()
     ref = request.headers.get("referer", "/hukumdar")
     return RedirectResponse(url=ref, status_code=303)
+
+
+# ── TOPLU SİLME & KONTROL ENDPOINTLERİ ──
+
+@app.post("/accounts/bulk-delete")
+async def bulk_delete_accounts(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+
+    try:
+        body = await request.json()
+        account_ids = body.get("account_ids", [])
+    except Exception:
+        account_ids = []
+
+    if not account_ids:
+        return JSONResponse({"error": "Hiçbir hesap seçilmedi"}, status_code=400)
+
+    deleted_count = 0
+    for acc_id in account_ids:
+        acc = db.query(Account).filter(Account.id == acc_id).first()
+        if acc:
+            if is_admin or (user and acc.user_id == user.id):
+                if acc.id in clients:
+                    try:
+                        await clients[acc.id].disconnect()
+                    except Exception:
+                        pass
+                    del clients[acc.id]
+                if acc.session_file and os.path.exists(acc.session_file):
+                    try:
+                        os.remove(acc.session_file)
+                    except Exception:
+                        pass
+                db.delete(acc)
+                deleted_count += 1
+
+    db.commit()
+    return JSONResponse({"ok": True, "deleted_count": deleted_count})
+
+
+@app.post("/rules/bulk-delete")
+async def bulk_delete_rules(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+
+    try:
+        body = await request.json()
+        rule_ids = body.get("rule_ids", [])
+    except Exception:
+        rule_ids = []
+
+    if not rule_ids:
+        return JSONResponse({"error": "Hiçbir kural seçilmedi"}, status_code=400)
+
+    deleted_count = 0
+    for r_id in rule_ids:
+        rule = db.query(Rule).filter(Rule.id == r_id).first()
+        if rule:
+            if is_admin or (user and rule.account and rule.account.user_id == user.id):
+                db.delete(rule)
+                deleted_count += 1
+
+    db.commit()
+    return JSONResponse({"ok": True, "deleted_count": deleted_count})
+
+
+@app.post("/rules/bulk-toggle")
+async def bulk_toggle_rules(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+
+    try:
+        body = await request.json()
+        rule_ids = body.get("rule_ids", [])
+        action = body.get("action", "toggle")
+    except Exception:
+        rule_ids = []
+        action = "toggle"
+
+    if not rule_ids:
+        return JSONResponse({"error": "Hiçbir kural seçilmedi"}, status_code=400)
+
+    count = 0
+    for r_id in rule_ids:
+        rule = db.query(Rule).filter(Rule.id == r_id).first()
+        if rule:
+            if is_admin or (user and rule.account and rule.account.user_id == user.id):
+                if action == "pause":
+                    rule.is_active = False
+                elif action == "resume":
+                    rule.is_active = True
+                else:
+                    rule.is_active = not rule.is_active
+                count += 1
+
+    db.commit()
+    return JSONResponse({"ok": True, "count": count})
 
 
 if __name__ == "__main__":

@@ -61,6 +61,7 @@ class Rule(Base):
     account_id     = Column(Integer, ForeignKey("accounts.id"))
     source_chat_id = Column(String, index=True)
     sender_id      = Column(String, index=True, nullable=True)
+    sender_name    = Column(String, nullable=True)     # Kisi ismi (gosterim icin)
     destination_id = Column(String)
     is_active      = Column(Boolean, default=True)
     description    = Column(String, nullable=True)
@@ -147,6 +148,7 @@ def init_db():
         "ALTER TABLE message_mappings ADD COLUMN account_id INTEGER",
         "ALTER TABLE rules ADD COLUMN block_links BOOLEAN DEFAULT 0",
         "ALTER TABLE rules ADD COLUMN replace_link TEXT",
+        "ALTER TABLE rules ADD COLUMN sender_name TEXT",
     ]
     for _sql in _migrations:
         try:

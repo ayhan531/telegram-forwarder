@@ -149,8 +149,9 @@
         <thead>
           <tr>
             <th class="row-num">#</th>
-            <th style="min-width:200px">Hangi Hesap İletecek?</th>
-            <th style="min-width:180px">Sadece Bu Kişiden <span style="font-weight:400;text-transform:none;color:var(--muted)">(boş = herkes)</span></th>
+            <th style="min-width:180px">Hangi Hesap İletecek?</th>
+            <th style="min-width:160px">Sadece Bu Kişiden <span style="font-weight:400;text-transform:none;color:var(--muted)">(Kişi ID)</span></th>
+            <th style="min-width:160px">Kişi İsmi <span style="font-weight:400;text-transform:none;color:var(--muted)">(Opsiyonel)</span></th>
             <th style="width:40px"></th>
           </tr>
         </thead>
@@ -278,6 +279,10 @@ function addRow() {
              placeholder="Kişi ID (boş = herkes)">
     </td>
     <td>
+      <input class="row-input" type="text" data-field="sender_name"
+             placeholder="Kişi İsmi (Örn: Begüm Tekin)">
+    </td>
+    <td>
       <button class="btn-del-row" onclick="removeRow(${rowCount})" title="Sil">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -315,7 +320,12 @@ async function submitAll() {
   document.querySelectorAll('#rowsBody tr').forEach(tr => {
     const accId  = tr.querySelector('[data-field="account_id"]')?.value;
     const sender = tr.querySelector('[data-field="sender_id"]')?.value.trim();
-    if (accId) rows.push({ account_id: parseInt(accId), sender_id: sender || '' });
+    const sname  = tr.querySelector('[data-field="sender_name"]')?.value.trim();
+    if (accId) rows.push({
+      account_id: parseInt(accId),
+      sender_id: sender || '',
+      sender_name: sname || ''
+    });
   });
 
   if (!rows.length) { alert('En az 1 satır ekle!'); return; }

@@ -250,13 +250,26 @@
     <div class="card">
       <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
         <span>📡 İletim Kuralları</span>
-        <button class="act-btn act-btn-gold" onclick="openAddRuleModal()">➕ Yeni Kural Ekle</button>
+        <div style="display:flex; gap:.5rem">
+          <button class="act-btn" onclick="hukumdarSelectAllRulesBtn()" id="hBtnSelectAllRules">☑️ Tümünü Seç</button>
+          <button class="act-btn act-btn-gold" onclick="openAddRuleModal()">➕ Yeni Kural Ekle</button>
+        </div>
+      </div>
+
+      <!-- Hükümdar Kural Toplu Kontrol -->
+      <div id="hukumdarBulkRuleBar" style="display:none;margin-top:.75rem;padding:.6rem 1rem;background:rgba(245,158,11,.08);border:1px solid var(--gold-border);border-radius:8px;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span id="hBulkRuleCount" style="font-size:.82rem;color:var(--gold);font-weight:700">0 kural seçildi</span>
+        <button onclick="hukumdarBulkRuleDelete()" class="act-btn act-btn-danger">🗑️ Seçilen Kuralları Sil</button>
+        <button onclick="hukumdarClearRuleSelection()" class="act-btn">✕ Temizle</button>
       </div>
 
       <div class="rules-table-wrap" style="margin-top:1rem">
         <table class="rules-table">
           <thead>
             <tr>
+              <th style="width:36px">
+                <input type="checkbox" id="hSelectAllRulesBox" onchange="hukumdarToggleSelectAllRules(this)">
+              </th>
               <th>Kullanıcı / Hesap</th>
               <th>Kaynak → Hedef</th>
               <th>Gönderen</th>
@@ -270,6 +283,9 @@
             {% for r in rules %}
             <tr class="rule-row" data-user-id="{{ r.account.user_id if r.account else 0 }}">
               <td>
+                <input type="checkbox" class="h-rule-chk" data-rule-id="{{ r.id }}" onchange="hukumdarToggleRule({{ r.id }}, this)">
+              </td>
+              <td>
                 <span class="badge badge-user">{{ r.account.owner.display_name if r.account and r.account.owner else '—' }}</span>
                 <span style="font-size:.78rem; font-weight:600; margin-left:.3rem">{{ r.account.name if r.account else '?' }}</span>
               </td>
@@ -280,7 +296,14 @@
                   <code style="font-size:.75rem; color:#c4b5fd">{{ r.destination_id }}</code>
                 </div>
               </td>
-              <td class="text-sm text-muted">{{ r.sender_id or 'Herkes' }}</td>
+              <td class="text-sm text-muted">
+                <code>{{ r.sender_id or 'Herkes' }}</code>
+                {% if r.sender_name %}
+                  <span class="badge badge-blue" style="font-size:.72rem; margin-left:.35rem; font-weight:700; background:rgba(56,189,248,.15); color:#38bdf8; border:1px solid rgba(56,189,248,.3)">
+                    👤 {{ r.sender_name }}
+                  </span>
+                {% endif %}
+              </td>
               <td class="text-sm">{{ r.description or '—' }}</td>
               <td>
                 <span class="badge badge-blue" style="font-size:.7rem">{{ r.filters|length }} filtre</span>
@@ -294,7 +317,7 @@
               </td>
               <td style="text-align:right">
                 <div style="display:inline-flex; gap:.3rem">
-                  <button class="act-btn" title="Kuralı Düzenle" onclick="openEditRuleModal({{ r.id }}, '{{ r.source_chat_id }}', '{{ r.destination_id }}', '{{ r.sender_id or '' }}', '{{ r.description or '' }}', {{ r.account_id }}, {{ 'true' if r.block_links else 'false' }}, '{{ r.replace_link or '' }}')">
+                  <button class="act-btn" title="Kuralı Düzenle" onclick="openEditRuleModal({{ r.id }}, '{{ r.source_chat_id }}', '{{ r.destination_id }}', '{{ r.sender_id or '' }}', '{{ r.sender_name or '' }}', '{{ r.description or '' }}', {{ r.account_id }}, {{ 'true' if r.block_links else 'false' }}, '{{ r.replace_link or '' }}')">
                     ✏️ Düzenle
                   </button>
                   <button class="act-btn act-btn-gold" title="Kuralı Başka Hesaba Kopyala" onclick="openCopyRuleModal({{ r.id }}, {{ r.account_id }})">
@@ -707,6 +730,11 @@
       </div>
 
       <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kişi İsmi (Opsiyonel)</label>
+        <input type="text" name="sender_name" id="edit_rule_sender_name" placeholder="Örn: Begüm Tekin" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
         <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kural İsmi / Açıklama</label>
         <input type="text" name="description" id="edit_rule_desc" placeholder="Örn: VIP Kanal iletimi" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
       </div>
@@ -847,16 +875,92 @@ function openCopyAccountModal(accId, name, userId) {
   openModal('modalCopyAccount');
 }
 
-function openEditRuleModal(ruleId, source, dest, sender, desc, accId, blockLinks, replaceLink) {
+function openEditRuleModal(ruleId, source, dest, sender, senderName, desc, accId, blockLinks, replaceLink) {
   document.getElementById('edit_rule_id').value = ruleId;
   document.getElementById('edit_rule_source').value = source;
   document.getElementById('edit_rule_dest').value = dest;
   document.getElementById('edit_rule_sender').value = sender;
+  document.getElementById('edit_rule_sender_name').value = senderName || '';
   document.getElementById('edit_rule_desc').value = desc;
   document.getElementById('edit_rule_account_id').value = accId;
   document.getElementById('edit_rule_block_links').checked = blockLinks;
   document.getElementById('edit_rule_replace_link').value = replaceLink;
   openModal('modalEditRule');
+}
+
+// -------------------------------------------------------------
+// HÜKÜMDAR KURAL TOPLU SİLME
+// -------------------------------------------------------------
+let hSelectedRules = new Set();
+
+function hukumdarToggleRule(ruleId, chk) {
+  if (chk.checked) hSelectedRules.add(ruleId);
+  else hSelectedRules.delete(ruleId);
+  hukumdarUpdateBulkBar();
+}
+
+function hukumdarSelectAllRulesBtn() {
+  const chks = document.querySelectorAll('.h-rule-chk');
+  const allSel = hSelectedRules.size === chks.length && chks.length > 0;
+  chks.forEach(chk => {
+    const rId = parseInt(chk.dataset.ruleId);
+    chk.checked = !allSel;
+    if (!allSel) hSelectedRules.add(rId);
+    else hSelectedRules.delete(rId);
+  });
+  const box = document.getElementById('hSelectAllRulesBox');
+  if (box) box.checked = !allSel;
+  hukumdarUpdateBulkBar();
+}
+
+function hukumdarToggleSelectAllRules(box) {
+  const chks = document.querySelectorAll('.h-rule-chk');
+  chks.forEach(chk => {
+    chk.checked = box.checked;
+    const rId = parseInt(chk.dataset.ruleId);
+    if (box.checked) hSelectedRules.add(rId);
+    else hSelectedRules.delete(rId);
+  });
+  hukumdarUpdateBulkBar();
+}
+
+function hukumdarUpdateBulkBar() {
+  const bar = document.getElementById('hukumdarBulkRuleBar');
+  const cnt = document.getElementById('hBulkRuleCount');
+  if (hSelectedRules.size > 0) {
+    bar.style.display = 'flex';
+    cnt.textContent = hSelectedRules.size + ' kural seçildi';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function hukumdarClearRuleSelection() {
+  document.querySelectorAll('.h-rule-chk').forEach(c => c.checked = false);
+  const box = document.getElementById('hSelectAllRulesBox');
+  if (box) box.checked = false;
+  hSelectedRules.clear();
+  hukumdarUpdateBulkBar();
+}
+
+async function hukumdarBulkRuleDelete() {
+  if (hSelectedRules.size === 0) return;
+  const ids = Array.from(hSelectedRules);
+  if (!confirm(ids.length + ' adet kuralı tamamen silmek istediğinize emin misiniz?')) return;
+  try {
+    const res = await fetch('/rules/bulk-delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule_ids: ids})
+    });
+    const d = await res.json();
+    if (d.ok) {
+      alert(`🗑️ ${d.deleted_count} kural silindi.`);
+      location.reload();
+    } else {
+      alert('Hata: ' + (d.error || 'Silinemedi'));
+    }
+  } catch(e) { alert('Hata: ' + e); }
 }
 
 function openCopyRuleModal(ruleId, accId) {

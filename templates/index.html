@@ -114,6 +114,10 @@
           <span class="badge badge-blue">{{ accounts|length }}</span>
         </div>
         <div class="flex gap-2">
+          <button onclick="toggleSelectAllAccounts()" id="btnSelectAllAccs" title="Tüm hesapları seç"
+            style="padding:.45rem .85rem;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.1);color:#a5b4fc;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.4rem;transition:background .2s">
+            ☑️ Tümünü Seç
+          </button>
           <button onclick="pauseAll()" id="btnPauseAll" title="Tüm hesapların iletimini durdur"
             style="padding:.45rem .85rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.4rem;transition:background .2s"
             onmouseover="this.style.background='rgba(251,191,36,.2)'" onmouseout="this.style.background='rgba(251,191,36,.1)'">
@@ -139,6 +143,7 @@
         <span id="bulkCount" style="font-size:.82rem;color:var(--text-muted)">0 hesap seçildi</span>
         <button onclick="bulkAction('pause')" style="padding:.35rem .7rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">⏸ Seçilenleri Durdur</button>
         <button onclick="bulkAction('resume')" style="padding:.35rem .7rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">▶ Seçilenleri Başlat</button>
+        <button onclick="bulkAction('delete')" style="padding:.35rem .7rem;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fca5a5;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">🗑️ Seçilen Hesapları Sil</button>
         <button onclick="clearSelection()" style="padding:.35rem .7rem;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text-muted);border-radius:6px;font-size:.76rem;cursor:pointer">✕ Seçimi Temizle</button>
       </div>
 
@@ -248,6 +253,12 @@
             </div>
           </div>
 
+          <!-- Kişi İsmi -->
+          <div class="field">
+            <label>🏷️ Kişi İsmi <span class="text-muted">(tabloda ID'nin yanında görünür)</span></label>
+            <input type="text" name="sender_name" id="sender_name" placeholder="Örn: Begüm Tekin">
+          </div>
+
           <!-- Açıklama -->
           <div class="field">
             <label>📝 Not <span class="text-muted">(hatırlatma için)</span></label>
@@ -267,17 +278,35 @@
 
     <!-- ── AKTİF KURALLAR ── -->
     <div class="card">
-      <div class="card-title">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        Aktif Kurallar
-        <span class="badge badge-purple">{{ rules|length }}</span>
+      <div class="flex items-center justify-between mb-3">
+        <div class="card-title" style="margin-bottom:0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Aktif Kurallar
+          <span class="badge badge-purple">{{ rules|length }}</span>
+        </div>
+        <button onclick="toggleSelectAllRules()" id="btnSelectAllRules" title="Tüm kuralları seç"
+          style="padding:.45rem .85rem;border:1px solid rgba(168,85,247,.4);background:rgba(168,85,247,.1);color:#d8b4fe;border-radius:8px;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.4rem;transition:background .2s">
+          ☑️ Tümünü Seç
+        </button>
+      </div>
+
+      {% if rules %}
+      <!-- Seçili kurallar için toplu kontrol -->
+      <div id="bulkRuleBar" style="display:none;margin-bottom:.75rem;padding:.6rem 1rem;background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.25);border-radius:8px;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span id="bulkRuleCount" style="font-size:.82rem;color:var(--text-muted)">0 kural seçildi</span>
+        <button onclick="bulkRuleAction('pause')" style="padding:.35rem .7rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">⏸ Seçilenleri Durdur</button>
+        <button onclick="bulkRuleAction('resume')" style="padding:.35rem .7rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">▶ Seçilenleri Başlat</button>
+        <button onclick="bulkRuleAction('delete')" style="padding:.35rem .7rem;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fca5a5;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">🗑️ Seçilen Kuralları Sil</button>
+        <button onclick="clearRuleSelection()" style="padding:.35rem .7rem;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text-muted);border-radius:6px;font-size:.76rem;cursor:pointer">✕ Seçimi Temizle</button>
       </div>
 
       <div class="rules-table-wrap">
-      {% if rules %}
         <table class="rules-table">
           <thead>
             <tr>
+              <th style="width:36px">
+                <input type="checkbox" id="ruleSelectAllBox" onchange="toggleSelectAllRulesCheck(this)" style="cursor:pointer">
+              </th>
               <th>Hesap</th>
               <th>Kaynak → Hedef</th>
               <th>Kişi</th>
@@ -289,7 +318,10 @@
           </thead>
           <tbody>
             {% for rule in rules %}
-            <tr style="{{ 'opacity:.45;' if not rule.is_active else '' }}">
+            <tr style="{{ 'opacity:.45;' if not rule.is_active else '' }}" id="rulerow-{{ rule.id }}">
+              <td>
+                <input type="checkbox" class="rule-chk" data-rule-id="{{ rule.id }}" onchange="toggleRuleSelect({{ rule.id }}, this)" style="cursor:pointer">
+              </td>
               <td>
                 <span class="badge badge-blue">{{ rule.account.name if rule.account else '?' }}</span>
                 {% if not rule.is_active %}
@@ -303,7 +335,14 @@
                   <code style="font-size:.78rem;color:#c4b5fd">{{ rule.destination_id }}</code>
                 </div>
               </td>
-              <td class="text-sm text-muted">{{ rule.sender_id or 'Herkes' }}</td>
+              <td class="text-sm text-muted">
+                <code>{{ rule.sender_id or 'Herkes' }}</code>
+                {% if rule.sender_name %}
+                  <span class="badge badge-blue" style="font-size:.72rem; margin-left:.35rem; font-weight:700; background:rgba(56,189,248,.15); color:#38bdf8; border:1px solid rgba(56,189,248,.3)">
+                    👤 {{ rule.sender_name }}
+                  </span>
+                {% endif %}
+              </td>
               <td class="text-sm text-muted">{{ rule.description or '—' }}</td>
               <td>
                 <!-- Mini filtre formu -->
@@ -357,7 +396,7 @@
                 <div class="flex gap-2">
                   <!-- Düzenle -->
                   <button type="button" title="Kuralı Düzenle" class="btn btn-secondary" style="padding:.4rem .6rem; font-size:.75rem"
-                    onclick="openEditRuleModal({{ rule.id }}, '{{ rule.source_chat_id }}', '{{ rule.destination_id }}', '{{ rule.sender_id or '' }}', '{{ rule.description or '' }}', {{ rule.account_id }}, {{ 'true' if rule.block_links else 'false' }}, '{{ rule.replace_link or '' }}')">
+                    onclick="openEditRuleModal({{ rule.id }}, '{{ rule.source_chat_id }}', '{{ rule.destination_id }}', '{{ rule.sender_id or '' }}', '{{ rule.sender_name or '' }}', '{{ rule.description or '' }}', {{ rule.account_id }}, {{ 'true' if rule.block_links else 'false' }}, '{{ rule.replace_link or '' }}')">
                     ✏️
                   </button>
                   <!-- Ortak Üye Analizi -->
@@ -583,6 +622,31 @@ async function resumeAccount(accId, btn) {
   btn.innerHTML = orig; btn.disabled = false;
 }
 
+// ── TÜM HESAPLARI SEÇ / SEÇİMİ KALDIR ──
+function toggleSelectAllAccounts() {
+  const cards = document.querySelectorAll('.account-card');
+  if (selectedAccounts.size === cards.length && cards.length > 0) {
+    clearSelection();
+  } else {
+    cards.forEach(card => {
+      const idStr = card.id.replace('acccard-', '');
+      const accId = parseInt(idStr);
+      if (!selectedAccounts.has(accId)) {
+        selectedAccounts.add(accId);
+        const sel = document.getElementById('sel-' + accId);
+        if (sel) {
+          sel.style.background = '#6366f1';
+          sel.style.borderColor = '#6366f1';
+          sel.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="white"><polyline points="20 6 9 17 4 12"/></svg>';
+        }
+        card.style.borderColor = 'rgba(99,102,241,.6)';
+        card.style.boxShadow = '0 0 0 2px rgba(99,102,241,.2)';
+      }
+    });
+    updateBulkBar();
+  }
+}
+
 // ── TÜM HESAPLAR DURDUR/BAŞLAT ──
 async function pauseAll() {
   const btn = document.getElementById('btnPauseAll');
@@ -608,10 +672,30 @@ async function resumeAll() {
   btn.innerHTML = orig; btn.disabled = false;
 }
 
-// ── SEÇİLEN HESAPLAR TOPLU DURDUR/BAŞLAT ──
+// ── SEÇİLEN HESAPLAR TOPLU İŞLEM (DURDUR/BAŞLAT/SİL) ──
 async function bulkAction(action) {
   if (selectedAccounts.size === 0) return;
   const ids = Array.from(selectedAccounts);
+
+  if (action === 'delete') {
+    if (!confirm(`${ids.length} adet seçili hesabı ve bunlara ait oturum/kuralları tamamen silmek istediğinize emin misiniz?`)) return;
+    try {
+      const res = await fetch('/accounts/bulk-delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({account_ids: ids})
+      });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(`🗑️ ${d.deleted_count} hesap silindi`, 'warn');
+        setTimeout(() => location.reload(), 900);
+      } else {
+        showToast('❌ ' + (d.error || 'Hata'), 'err');
+      }
+    } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+    return;
+  }
+
   const url = action === 'pause' ? '/accounts/bulk-pause' : '/accounts/bulk-resume';
   try {
     const res = await fetch(url, {
@@ -624,6 +708,101 @@ async function bulkAction(action) {
     const key = action === 'pause' ? 'paused_rules' : 'resumed_rules';
     if (d.ok) showToast(label + ': ' + d[key] + ' kural', action === 'pause' ? 'warn' : 'ok');
     else showToast('❌ ' + (d.error || 'Hata'), 'err');
+  } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+}
+
+// ── KURAL SEÇİM SİSTEMİ & TOPLU SİLME ──
+let selectedRules = new Set();
+
+function toggleRuleSelect(ruleId, chk) {
+  if (chk.checked) {
+    selectedRules.add(ruleId);
+  } else {
+    selectedRules.delete(ruleId);
+  }
+  updateBulkRuleBar();
+}
+
+function toggleSelectAllRules() {
+  const chks = document.querySelectorAll('.rule-chk');
+  const allSelected = selectedRules.size === chks.length && chks.length > 0;
+  chks.forEach(chk => {
+    const rId = parseInt(chk.dataset.ruleId);
+    chk.checked = !allSelected;
+    if (!allSelected) selectedRules.add(rId);
+    else selectedRules.delete(rId);
+  });
+  const headerBox = document.getElementById('ruleSelectAllBox');
+  if (headerBox) headerBox.checked = !allSelected;
+  updateBulkRuleBar();
+}
+
+function toggleSelectAllRulesCheck(box) {
+  const chks = document.querySelectorAll('.rule-chk');
+  chks.forEach(chk => {
+    chk.checked = box.checked;
+    const rId = parseInt(chk.dataset.ruleId);
+    if (box.checked) selectedRules.add(rId);
+    else selectedRules.delete(rId);
+  });
+  updateBulkRuleBar();
+}
+
+function updateBulkRuleBar() {
+  const bar = document.getElementById('bulkRuleBar');
+  const cnt = document.getElementById('bulkRuleCount');
+  if (selectedRules.size > 0) {
+    bar.style.display = 'flex';
+    cnt.textContent = selectedRules.size + ' kural seçildi';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearRuleSelection() {
+  document.querySelectorAll('.rule-chk').forEach(c => c.checked = false);
+  const headerBox = document.getElementById('ruleSelectAllBox');
+  if (headerBox) headerBox.checked = false;
+  selectedRules.clear();
+  updateBulkRuleBar();
+}
+
+async function bulkRuleAction(action) {
+  if (selectedRules.size === 0) return;
+  const ids = Array.from(selectedRules);
+
+  if (action === 'delete') {
+    if (!confirm(`${ids.length} adet kuralı silmek istediğinize emin misiniz?`)) return;
+    try {
+      const res = await fetch('/rules/bulk-delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rule_ids: ids})
+      });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(`🗑️ ${d.deleted_count} kural silindi`, 'warn');
+        setTimeout(() => location.reload(), 800);
+      } else {
+        showToast('❌ ' + (d.error || 'Silme hatası'), 'err');
+      }
+    } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+    return;
+  }
+
+  try {
+    const res = await fetch('/rules/bulk-toggle', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule_ids: ids, action: action})
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`${ids.length} kural güncellendi`, action === 'pause' ? 'warn' : 'ok');
+      setTimeout(() => location.reload(), 800);
+    } else {
+      showToast('❌ ' + (d.error || 'Hata'), 'err');
+    }
   } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
 }
 
@@ -892,11 +1071,12 @@ function openRenameAccountModal(accId, name) {
   document.getElementById('modalRenameAccount').style.display = 'flex';
 }
 
-function openEditRuleModal(ruleId, source, dest, sender, desc, accId, blockLinks, replaceLink) {
+function openEditRuleModal(ruleId, source, dest, sender, senderName, desc, accId, blockLinks, replaceLink) {
   document.getElementById('edit_rule_id').value = ruleId;
   document.getElementById('edit_rule_source').value = source;
   document.getElementById('edit_rule_dest').value = dest;
   document.getElementById('edit_rule_sender').value = sender;
+  document.getElementById('edit_rule_sender_name').value = senderName || '';
   document.getElementById('edit_rule_desc').value = desc;
   document.getElementById('edit_rule_account_id').value = accId;
   document.getElementById('edit_rule_block_links').checked = blockLinks;
@@ -1031,6 +1211,11 @@ async function doRuleMemberInspection(e) {
       <div>
         <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Gönderen Kişi / Bot ID (Opsiyonel)</label>
         <input type="text" name="sender_id" id="edit_rule_sender" placeholder="Boş bırakılırsa herkes" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kişi İsmi (Opsiyonel)</label>
+        <input type="text" name="sender_name" id="edit_rule_sender_name" placeholder="Örn: Begüm Tekin" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
       </div>
 
       <div>
