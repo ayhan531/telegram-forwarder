@@ -19,7 +19,10 @@ from dotenv import load_dotenv
 import qrcode
 
 import database
-from database import SessionLocal, Rule, Account, MessageMapping, WordFilter, User, Teacher, TeacherReaction, hash_password
+from database import (
+    SessionLocal, Rule, Account, MessageMapping, WordFilter,
+    User, Teacher, TeacherReaction, hash_password, UserTask, IgnoredMember
+)
 
 from contextlib import asynccontextmanager
 
@@ -861,11 +864,18 @@ async def read_root(request: Request, db: Session = Depends(get_db)):
         account_ids = [a.id for a in accounts]
         rules = db.query(Rule).filter(Rule.account_id.in_(account_ids)).all() if account_ids else []
         active_client_ids = set(clients.keys())
+
+        # Kullanıcıya atanmış tamamlanmamış görevler
+        pending_tasks = db.query(UserTask).filter(
+            (UserTask.user_id == user.id) | (UserTask.user_id == None),
+            UserTask.status == "pending"
+        ).order_by(UserTask.id.desc()).all()
         
         return templates.TemplateResponse(request=request, name="index.html",
                                           context={"rules": rules, "accounts": accounts,
                                                    "unclaimed": [], "current_user": user,
-                                                   "active_client_ids": active_client_ids})
+                                                   "active_client_ids": active_client_ids,
+                                                   "pending_tasks": pending_tasks})
     except Exception as e:
         import traceback
         return HTMLResponse(content=f"<h1>Hata Oluştu</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
@@ -2063,6 +2073,545 @@ async def delete_teacher_reaction(request: Request, t_id: int, acc_id: int, db: 
     ).delete()
     db.commit()
     return JSONResponse({"ok": True})
+
+
+# ── HÜKÜMDAR & YÖNETİM ENDPOINTLERİ ──
+
+def check_hukumdar_auth(request: Request) -> bool:
+    return bool(request.session.get("is_hukumdar"))
+
+@app.post("/tasks/{task_id}/complete")
+async def complete_task(
+    task_id: int,
+    request: Request,
+    feedback: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(request, db)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+    task = db.query(UserTask).filter(UserTask.id == task_id).first()
+    if task and (task.user_id == user.id or task.user_id is None):
+        task.status = "completed"
+        task.feedback = feedback.strip() if feedback else "Tamamlandı olarak işaretlendi."
+        task.updated_at = datetime.datetime.utcnow().isoformat()
+        db.commit()
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/accounts/rename")
+async def rename_account(
+    request: Request,
+    account_id: int = Form(...),
+    name: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return RedirectResponse(url="/login", status_code=303)
+
+    acc = db.query(Account).filter(Account.id == account_id).first()
+    if acc:
+        if is_admin or (user and acc.user_id == user.id):
+            acc.name = name.strip()
+            db.commit()
+
+    ref = request.headers.get("referer", "/")
+    return RedirectResponse(url=ref, status_code=303)
+
+@app.post("/accounts/{account_id}/rename")
+async def rename_account_path(
+    account_id: int,
+    request: Request,
+    name: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    return await rename_account(request=request, account_id=account_id, name=name, db=db)
+
+@app.post("/rules/edit")
+async def edit_rule(
+    request: Request,
+    rule_id: int = Form(...),
+    account_id: int = Form(...),
+    source_chat_id: str = Form(...),
+    destination_id: str = Form(...),
+    sender_id: str = Form(None),
+    description: str = Form(None),
+    block_links: bool = Form(False),
+    replace_link: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return RedirectResponse(url="/login", status_code=303)
+
+    rule = db.query(Rule).filter(Rule.id == rule_id).first()
+    if rule:
+        if is_admin or (user and rule.account and rule.account.user_id == user.id):
+            rule.account_id = account_id
+            rule.source_chat_id = source_chat_id.strip()
+            rule.destination_id = destination_id.strip()
+            rule.sender_id = sender_id.strip() if sender_id and sender_id.strip() else None
+            rule.description = description.strip() if description and description.strip() else None
+            rule.block_links = block_links
+            rule.replace_link = replace_link.strip() if replace_link and replace_link.strip() else None
+            db.commit()
+
+    ref = request.headers.get("referer", "/")
+    return RedirectResponse(url=ref, status_code=303)
+
+@app.post("/rules/{rule_id}/edit")
+async def edit_rule_path(
+    rule_id: int,
+    request: Request,
+    account_id: int = Form(...),
+    source_chat_id: str = Form(...),
+    destination_id: str = Form(...),
+    sender_id: str = Form(None),
+    description: str = Form(None),
+    block_links: bool = Form(False),
+    replace_link: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    return await edit_rule(
+        request=request,
+        rule_id=rule_id,
+        account_id=account_id,
+        source_chat_id=source_chat_id,
+        destination_id=destination_id,
+        sender_id=sender_id,
+        description=description,
+        block_links=block_links,
+        replace_link=replace_link,
+        db=db
+    )
+
+@app.get("/hukumdar", response_class=HTMLResponse)
+async def hukumdar_panel(request: Request, db: Session = Depends(get_db)):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+
+    users = db.query(User).order_by(User.id.asc()).all()
+    accounts = db.query(Account).order_by(Account.id.asc()).all()
+    rules = db.query(Rule).order_by(Rule.id.asc()).all()
+    tasks = db.query(UserTask).order_by(UserTask.id.desc()).all()
+    ignored_members = db.query(IgnoredMember).order_by(IgnoredMember.id.desc()).all()
+    active_client_ids = set(clients.keys())
+    user_acc_counts = {u.id: sum(1 for a in accounts if a.user_id == u.id) for u in users}
+    pending_tasks_count = sum(1 for t in tasks if t.status == "pending")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="hukumdar.html",
+        context={
+            "users": users,
+            "accounts": accounts,
+            "rules": rules,
+            "tasks": tasks,
+            "ignored_members": ignored_members,
+            "active_client_ids": active_client_ids,
+            "user_acc_counts": user_acc_counts,
+            "pending_tasks_count": pending_tasks_count
+        }
+    )
+
+@app.get("/hukumdar/login", response_class=HTMLResponse)
+async def hukumdar_login_page(request: Request):
+    if check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar", status_code=303)
+    error = request.session.pop("hukumdar_error", None)
+    return templates.TemplateResponse(request=request, name="hukumdar_login.html", context={"error": error})
+
+@app.post("/hukumdar/login")
+async def hukumdar_login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    valid_un = username.strip().lower() in ["hükümdar", "hukumdar"]
+    valid_pw = password.strip() in ["hükümdar123", "hukumdar123"]
+    if valid_un and valid_pw:
+        request.session["is_hukumdar"] = True
+        return RedirectResponse(url="/hukumdar", status_code=303)
+    else:
+        request.session["hukumdar_error"] = "Hatalı Hükümdar kullanıcı adı veya şifresi!"
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+
+@app.get("/hukumdar/logout")
+async def hukumdar_logout(request: Request):
+    request.session.pop("is_hukumdar", None)
+    return RedirectResponse(url="/hukumdar/login", status_code=303)
+
+@app.post("/hukumdar/accounts/move")
+async def hukumdar_move_account(
+    request: Request,
+    account_id: int = Form(...),
+    target_user_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    acc = db.query(Account).filter(Account.id == account_id).first()
+    if acc:
+        acc.user_id = target_user_id
+        db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/accounts/copy")
+async def hukumdar_copy_account(
+    request: Request,
+    account_id: int = Form(...),
+    target_user_id: int = Form(...),
+    copy_rules: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    src_acc = db.query(Account).filter(Account.id == account_id).first()
+    if src_acc:
+        import shutil
+        new_phone = f"{src_acc.phone}_u{target_user_id}"
+        new_session = src_acc.session_file
+        if os.path.exists(src_acc.session_file):
+            new_session = src_acc.session_file.replace(".session", f"_u{target_user_id}.session")
+            try:
+                shutil.copy2(src_acc.session_file, new_session)
+            except Exception:
+                new_session = src_acc.session_file
+
+        new_acc = Account(
+            user_id=target_user_id,
+            name=f"{src_acc.name} (Kopya)",
+            phone=new_phone,
+            api_id=src_acc.api_id,
+            api_hash=src_acc.api_hash,
+            session_file=new_session,
+            is_active=src_acc.is_active
+        )
+        db.add(new_acc)
+        db.commit()
+        db.refresh(new_acc)
+
+        if copy_rules:
+            for r in src_acc.rules:
+                cloned_rule = Rule(
+                    account_id=new_acc.id,
+                    source_chat_id=r.source_chat_id,
+                    sender_id=r.sender_id,
+                    destination_id=r.destination_id,
+                    is_active=r.is_active,
+                    description=r.description,
+                    block_links=r.block_links,
+                    replace_link=r.replace_link
+                )
+                db.add(cloned_rule)
+                db.commit()
+                db.refresh(cloned_rule)
+                for f in r.filters:
+                    db.add(WordFilter(rule_id=cloned_rule.id, search_word=f.search_word, replace_word=f.replace_word))
+            db.commit()
+
+        asyncio.create_task(start_client(new_acc))
+
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/accounts/batch-transfer")
+async def hukumdar_batch_transfer(
+    request: Request,
+    source_user_id: int = Form(...),
+    target_user_id: int = Form(...),
+    action_type: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+
+    if source_user_id == target_user_id:
+        return RedirectResponse(url="/hukumdar", status_code=303)
+
+    src_accs = db.query(Account).filter(Account.user_id == source_user_id).all()
+    if action_type == "move":
+        for acc in src_accs:
+            acc.user_id = target_user_id
+        db.commit()
+    elif action_type == "copy_rules":
+        target_accs = db.query(Account).filter(Account.user_id == target_user_id).all()
+        if target_accs:
+            first_target_acc = target_accs[0]
+            for acc in src_accs:
+                for r in acc.rules:
+                    cloned_r = Rule(
+                        account_id=first_target_acc.id,
+                        source_chat_id=r.source_chat_id,
+                        sender_id=r.sender_id,
+                        destination_id=r.destination_id,
+                        is_active=r.is_active,
+                        description=f"{r.description or ''} (Kopya)",
+                        block_links=r.block_links,
+                        replace_link=r.replace_link
+                    )
+                    db.add(cloned_r)
+                    db.commit()
+                    db.refresh(cloned_r)
+                    for f in r.filters:
+                        db.add(WordFilter(rule_id=cloned_r.id, search_word=f.search_word, replace_word=f.replace_word))
+            db.commit()
+
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/rules/copy")
+async def hukumdar_copy_rule(
+    request: Request,
+    rule_id: int = Form(...),
+    target_account_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    r = db.query(Rule).filter(Rule.id == rule_id).first()
+    if r:
+        cloned = Rule(
+            account_id=target_account_id,
+            source_chat_id=r.source_chat_id,
+            sender_id=r.sender_id,
+            destination_id=r.destination_id,
+            is_active=r.is_active,
+            description=r.description,
+            block_links=r.block_links,
+            replace_link=r.replace_link
+        )
+        db.add(cloned)
+        db.commit()
+        db.refresh(cloned)
+        for f in r.filters:
+            db.add(WordFilter(rule_id=cloned.id, search_word=f.search_word, replace_word=f.replace_word))
+        db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/rules/move")
+async def hukumdar_move_rule(
+    request: Request,
+    rule_id: int = Form(...),
+    target_account_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    r = db.query(Rule).filter(Rule.id == rule_id).first()
+    if r:
+        r.account_id = target_account_id
+        db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/users/change-password")
+async def hukumdar_change_password(
+    request: Request,
+    user_id: int = Form(...),
+    new_password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    u = db.query(User).filter(User.id == user_id).first()
+    if u and new_password.strip():
+        u.password_hash = hash_password(new_password.strip())
+        db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/tasks/create")
+async def hukumdar_create_task(
+    request: Request,
+    user_id: str = Form(...),
+    title: str = Form(...),
+    content: str = Form(...),
+    deadline: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+
+    now_iso = datetime.datetime.utcnow().isoformat()
+    if user_id == "all":
+        users = db.query(User).all()
+        for u in users:
+            db.add(UserTask(
+                user_id=u.id,
+                title=title.strip(),
+                content=content.strip(),
+                deadline=deadline.strip() if deadline and deadline.strip() else None,
+                status="pending",
+                created_at=now_iso
+            ))
+    else:
+        db.add(UserTask(
+            user_id=int(user_id),
+            title=title.strip(),
+            content=content.strip(),
+            deadline=deadline.strip() if deadline and deadline.strip() else None,
+            status="pending",
+            created_at=now_iso
+        ))
+    db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/tasks/{task_id}/delete")
+async def hukumdar_delete_task(
+    task_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    t = db.query(UserTask).filter(UserTask.id == task_id).first()
+    if t:
+        db.delete(t)
+        db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/hukumdar/tasks/{task_id}/status")
+async def hukumdar_toggle_task_status(
+    task_id: int,
+    request: Request,
+    status: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    if not check_hukumdar_auth(request):
+        return RedirectResponse(url="/hukumdar/login", status_code=303)
+    t = db.query(UserTask).filter(UserTask.id == task_id).first()
+    if t:
+        t.status = status
+        db.commit()
+    return RedirectResponse(url="/hukumdar", status_code=303)
+
+@app.post("/members/inspect")
+async def inspect_members(
+    request: Request,
+    account_id: int = Form(...),
+    chat_a: str = Form(...),
+    chat_b: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    if account_id not in clients:
+        return JSONResponse({"error": "Seçilen hesap şu an aktif veya bağlı değil."}, status_code=400)
+
+    client: TelegramClient = clients[account_id]
+
+    async def get_chat_members(chat_str):
+        chat_str = chat_str.strip()
+        if chat_str.lstrip("-").isdigit():
+            chat_entity = int(chat_str)
+        else:
+            chat_entity = chat_str
+
+        members = {}
+        try:
+            entity = await client.get_entity(chat_entity)
+            async for user in client.iter_participants(entity, limit=2000):
+                if getattr(user, "deleted", False):
+                    continue
+                first = getattr(user, "first_name", "") or ""
+                last = getattr(user, "last_name", "") or ""
+                full_name = f"{first} {last}".strip() or "İsimsiz"
+                u_phone = getattr(user, "phone", "")
+                members[user.id] = {
+                    "id": user.id,
+                    "name": full_name,
+                    "username": getattr(user, "username", "") or "",
+                    "phone": f"+{u_phone}" if u_phone else ""
+                }
+        except Exception as e:
+            print(f"[Inspect] get_participants hatası ({chat_str}): {e}")
+            raise e
+        return members
+
+    try:
+        members_a = await asyncio.wait_for(get_chat_members(chat_a), timeout=45)
+    except Exception as e:
+        return JSONResponse({"error": f"Grup A üyeleri alınamadı: {e}"}, status_code=400)
+
+    try:
+        members_b = await asyncio.wait_for(get_chat_members(chat_b), timeout=45)
+    except Exception as e:
+        return JSONResponse({"error": f"Grup B üyeleri alınamadı: {e}"}, status_code=400)
+
+    ignored_rows = db.query(IgnoredMember).all()
+    ignored_set = set()
+    for row in ignored_rows:
+        val = row.identifier.strip().lower().lstrip("+").lstrip("@")
+        ignored_set.add(val)
+
+    common_ids = set(members_a.keys()).intersection(set(members_b.keys()))
+    common_members = []
+    for uid in common_ids:
+        m = members_a[uid]
+        u_id_str = str(m["id"])
+        u_phone_str = m["phone"].lstrip("+")
+        u_uname_str = m["username"].lower()
+
+        if u_id_str in ignored_set or (u_phone_str and u_phone_str in ignored_set) or (u_uname_str and u_uname_str in ignored_set):
+            continue
+        common_members.append(m)
+
+    return JSONResponse({
+        "count_a": len(members_a),
+        "count_b": len(members_b),
+        "common_count": len(common_members),
+        "common_members": common_members
+    })
+
+@app.post("/members/kick")
+async def kick_chat_member(
+    request: Request,
+    account_id: int = Form(...),
+    chat_id: str = Form(...),
+    user_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    if account_id not in clients:
+        return JSONResponse({"error": "Hesap aktif değil"}, status_code=400)
+
+    client: TelegramClient = clients[account_id]
+    chat_str = chat_id.strip()
+    chat_entity = int(chat_str) if chat_str.lstrip("-").isdigit() else chat_str
+
+    try:
+        entity = await client.get_entity(chat_entity)
+        user_entity = await client.get_entity(user_id)
+        await client.kick_participant(entity, user_entity)
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+@app.post("/ignored-members/add")
+async def add_ignored_member(
+    request: Request,
+    identifier: str = Form(...),
+    note: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    clean = identifier.strip()
+    if clean:
+        existing = db.query(IgnoredMember).filter(IgnoredMember.identifier == clean).first()
+        if not existing:
+            db.add(IgnoredMember(identifier=clean, note=note, created_at=datetime.datetime.utcnow().isoformat()))
+            db.commit()
+    ref = request.headers.get("referer", "/hukumdar")
+    return RedirectResponse(url=ref, status_code=303)
+
+@app.post("/ignored-members/{item_id}/delete")
+async def delete_ignored_member(
+    item_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    item = db.query(IgnoredMember).filter(IgnoredMember.id == item_id).first()
+    if item:
+        db.delete(item)
+        db.commit()
+    ref = request.headers.get("referer", "/hukumdar")
+    return RedirectResponse(url=ref, status_code=303)
+
 
 if __name__ == "__main__":
     import uvicorn

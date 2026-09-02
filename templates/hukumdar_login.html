@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hükümdar Girişi — Telegram Forwarder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #07070b;
+      --surface:   #101018;
+      --surface2:  #181824;
+      --border:    #2a2a3e;
+      --primary:   #f59e0b;
+      --primary-g: linear-gradient(135deg, #f59e0b, #d97706);
+      --text:      #f8fafc;
+      --muted:     #94a3b8;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 70% 60% at 50% 20%, rgba(245,158,11,.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(217,119,6,.08) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .login-card {
+      position: relative;
+      width: 440px;
+      max-width: 95vw;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2.5rem 2.2rem 2.2rem;
+      box-shadow: 0 25px 60px rgba(0,0,0,.6);
+      animation: fadeUp .4s ease both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(20px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    .crown-icon {
+      width: 52px; height: 52px;
+      border-radius: 14px;
+      background: var(--primary-g);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.75rem;
+      margin-bottom: 1.25rem;
+      box-shadow: 0 8px 20px rgba(245,158,11,.25);
+    }
+
+    .title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      margin-bottom: .3rem;
+    }
+
+    .sub {
+      font-size: .85rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .field {
+      margin-bottom: 1.2rem;
+    }
+
+    label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: .5rem;
+    }
+
+    input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: .9rem 1rem;
+      color: white;
+      outline: none;
+      font-size: 1rem;
+      transition: border-color .2s, box-shadow .2s;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(245,158,11,.15);
+    }
+
+    .btn {
+      width: 100%;
+      background: var(--primary-g);
+      color: #000;
+      font-weight: 700;
+      font-size: 1rem;
+      border: none;
+      border-radius: 12px;
+      padding: 1rem;
+      cursor: pointer;
+      margin-top: .8rem;
+      transition: transform .15s, box-shadow .15s, opacity .15s;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 25px rgba(245,158,11,.35);
+      opacity: .95;
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .error-msg {
+      background: rgba(239,68,68,.1);
+      border: 1px solid rgba(239,68,68,.3);
+      border-radius: 10px;
+      padding: .8rem 1rem;
+      color: #fca5a5;
+      font-size: .85rem;
+      margin-bottom: 1.2rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="crown-icon">👑</div>
+  <div class="title">Hükümdar Kontrol Paneli</div>
+  <div class="sub">Tüm sistem yönetimi ve yetkili erişim alanı</div>
+
+  {% if error %}
+  <div class="error-msg">
+    <span>⚠️</span>
+    <span>{{ error }}</span>
+  </div>
+  {% endif %}
+
+  <form method="POST" action="/hukumdar/login">
+    <div class="field">
+      <label for="username">Kullanıcı Adı</label>
+      <input type="text" id="username" name="username" placeholder="hükümdar" autofocus required>
+    </div>
+
+    <div class="field">
+      <label for="password">Şifre</label>
+      <input type="password" id="password" name="password" placeholder="••••••••" required>
+    </div>
+
+    <button type="submit" class="btn">
+      Giriş Yap →
+    </button>
+  </form>
+</div>
+
+</body>
+</html>

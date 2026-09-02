@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>👑 Hükümdar Kontrol Merkezi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    :root {
+      --gold: #f59e0b;
+      --gold-g: linear-gradient(135deg, #f59e0b, #d97706);
+      --gold-surface: rgba(245, 158, 11, 0.08);
+      --gold-border: rgba(245, 158, 11, 0.25);
+    }
+    .badge-gold { background: var(--gold-surface); color: var(--gold); border: 1px solid var(--gold-border); }
+    .badge-user { background: rgba(99,102,241,.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,.3); }
+
+    /* Hükümdar Tabs */
+    .h-tabs {
+      display: flex; gap: .5rem; border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem; overflow-x: auto; padding-bottom: .25rem;
+    }
+    .h-tab-btn {
+      padding: .65rem 1.2rem; background: transparent; border: 1px solid transparent;
+      border-radius: 8px 8px 0 0; color: var(--text-muted); font-weight: 600; font-size: .88rem;
+      cursor: pointer; display: flex; align-items: center; gap: .5rem; transition: all .15s; white-space: nowrap;
+    }
+    .h-tab-btn:hover { color: var(--text); background: var(--surface2); }
+    .h-tab-btn.active {
+      color: var(--gold); background: var(--surface); border-color: var(--border);
+      border-bottom-color: var(--surface);
+    }
+
+    /* Tab content */
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; animation: fadeIn .2s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center; z-index: 9999; padding: 1rem;
+    }
+    .modal-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+      width: 540px; max-width: 100%; max-height: 90vh; overflow-y: auto; padding: 1.75rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,.7); position: relative;
+    }
+
+    /* Action icons */
+    .act-btn {
+      padding: .35rem .6rem; border-radius: 6px; font-size: .75rem; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+      color: var(--text); display: inline-flex; align-items: center; gap: .3rem; transition: all .15s;
+    }
+    .act-btn:hover { border-color: var(--primary); background: rgba(99,102,241,.15); color: white; }
+    .act-btn-gold:hover { border-color: var(--gold); background: var(--gold-surface); color: var(--gold); }
+    .act-btn-danger:hover { border-color: #ef4444; background: rgba(239,68,68,.15); color: #fca5a5; }
+
+    /* Filter tag */
+    .user-pill-filter {
+      padding: .35rem .8rem; border-radius: 20px; font-size: .78rem; font-weight: 600;
+      border: 1px solid var(--border); background: var(--surface2); color: var(--text-muted);
+      cursor: pointer; transition: all .15s;
+    }
+    .user-pill-filter:hover { color: white; border-color: var(--primary); }
+    .user-pill-filter.active { background: var(--gold-surface); color: var(--gold); border-color: var(--gold); }
+  </style>
+</head>
+<body>
+<div class="page" style="display:block; max-width: 1400px; margin: 0 auto; padding: 1.5rem;">
+
+  <!-- TOP HEADER -->
+  <header style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border); margin-bottom:1.5rem">
+    <div style="display:flex; align-items:center; gap:1rem">
+      <div style="width:48px; height:48px; border-radius:12px; background:var(--gold-g); display:flex; align-items:center; justify-content:center; font-size:1.6rem; box-shadow:0 6px 15px rgba(245,158,11,.3)">
+        👑
+      </div>
+      <div>
+        <h1 style="font-size:1.5rem; font-weight:800; margin:0; display:flex; align-items:center; gap:.5rem">
+          Hükümdar Kontrol Merkezi
+          <span class="badge badge-gold" style="font-size:.7rem; padding:.15rem .5rem">Süper Yönetici</span>
+        </h1>
+        <p style="font-size:.82rem; color:var(--text-muted); margin-top:.2rem">Tüm hesaplar, kurallar, üyeler, bildirimler ve yetkili aktarım merkezi</p>
+      </div>
+    </div>
+
+    <!-- Stats & Actions -->
+    <div style="display:flex; align-items:center; gap:.75rem; flex-wrap:wrap">
+      <div style="display:flex; gap:.5rem">
+        <div style="background:var(--surface); border:1px solid var(--border); padding:.4rem .75rem; border-radius:8px; text-align:center">
+          <div style="font-size:.65rem; color:var(--text-muted); text-transform:uppercase">Hesaplar</div>
+          <div style="font-weight:700; color:var(--gold); font-size:1rem">{{ accounts|length }}</div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--border); padding:.4rem .75rem; border-radius:8px; text-align:center">
+          <div style="font-size:.65rem; color:var(--text-muted); text-transform:uppercase">Kurallar</div>
+          <div style="font-weight:700; color:#38bdf8; font-size:1rem">{{ rules|length }}</div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--border); padding:.4rem .75rem; border-radius:8px; text-align:center">
+          <div style="font-size:.65rem; color:var(--text-muted); text-transform:uppercase">Kullanıcılar</div>
+          <div style="font-weight:700; color:#a855f7; font-size:1rem">{{ users|length }}</div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--border); padding:.4rem .75rem; border-radius:8px; text-align:center">
+          <div style="font-size:.65rem; color:var(--text-muted); text-transform:uppercase">Oturumlar</div>
+          <div style="font-weight:700; color:#4ade80; font-size:1rem">{{ active_client_ids|length }}</div>
+        </div>
+      </div>
+
+      <a href="/" class="act-btn" style="padding:.6rem 1rem">
+        🌐 Standart Panel
+      </a>
+      <a href="/hukumdar/logout" class="act-btn act-btn-danger" style="padding:.6rem 1rem">
+        🚪 Çıkış
+      </a>
+    </div>
+  </header>
+
+  <!-- TAB NAVIGATION -->
+  <nav class="h-tabs">
+    <button class="h-tab-btn active" onclick="showTab('tab-accounts')">
+      📱 Hesaplar & Kurallar
+    </button>
+    <button class="h-tab-btn" onclick="showTab('tab-users')">
+      🔐 Kullanıcı & Şifre Yönetimi
+    </button>
+    <button class="h-tab-btn" onclick="showTab('tab-tasks')">
+      📌 Görevler & Bildirimler
+      {% if pending_tasks_count > 0 %}
+      <span style="background:#ef4444; color:white; font-size:.65rem; padding:.1rem .4rem; border-radius:10px">{{ pending_tasks_count }}</span>
+      {% endif %}
+    </button>
+    <button class="h-tab-btn" onclick="showTab('tab-members')">
+      👥 Ortak Üye Analizi
+    </button>
+  </nav>
+
+  <!-- ================================================================= -->
+  <!-- TAB 1: HESAPLAR & KURALLAR                                        -->
+  <!-- ================================================================= -->
+  <div id="tab-accounts" class="tab-pane active">
+
+    <!-- HIZLI TOPLU AKTARIM KARTI -->
+    <div class="card" style="border-color:var(--gold-border); background:linear-gradient(180deg, var(--gold-surface) 0%, var(--surface) 100%); margin-bottom:1.5rem">
+      <div class="card-title" style="color:var(--gold); display:flex; justify-content:space-between; align-items:center">
+        <span>🚀 Hızlı Toplu Hesap & Kural Aktarımı</span>
+        <span style="font-size:.75rem; font-weight:normal; color:var(--text-muted)">Örn: Alper'in tüm hesap ve kurallarını Türkan'a aktar</span>
+      </div>
+
+      <form action="/hukumdar/accounts/batch-transfer" method="POST" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)) auto; gap:.8rem; align-items:end; margin-top:.75rem">
+        <div>
+          <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kaynak Kullanıcı</label>
+          <select name="source_user_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+            <option value="">Seçiniz...</option>
+            {% for u in users %}
+            <option value="{{ u.id }}">{{ u.display_name }} (@{{ u.username }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Hedef Kullanıcı</label>
+          <select name="target_user_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+            <option value="">Seçiniz...</option>
+            {% for u in users %}
+            <option value="{{ u.id }}">{{ u.display_name }} (@{{ u.username }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">İşlem Türü</label>
+          <select name="action_type" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+            <option value="move">Hesapları ve Kuralları TAŞI (Move)</option>
+            <option value="copy_rules">Sadece Kuralları Hedefe KOPYALA</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.65rem 1.2rem; border-radius:8px; height:42px" onclick="return confirm('Bu toplu aktarımı gerçekleştirmek istediğinize emin misiniz?')">
+          ⚡ Aktarımı Başlat
+        </button>
+      </form>
+    </div>
+
+    <!-- KULLANICI FİLTRELEME BUTONLARI -->
+    <div style="display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; margin-bottom:1.2rem">
+      <span style="font-size:.8rem; color:var(--text-muted); font-weight:600">Kullanıcı Filtrele:</span>
+      <button class="user-pill-filter active" onclick="filterByUser('all', this)">Tümü ({{ accounts|length }})</button>
+      {% for u in users %}
+      <button class="user-pill-filter" onclick="filterByUser('{{ u.id }}', this)">
+        {{ u.display_name }} ({{ user_acc_counts.get(u.id, 0) }})
+      </button>
+      {% endfor %}
+    </div>
+
+    <!-- HESAPLAR BÖLÜMÜ -->
+    <div class="card" style="margin-bottom:1.5rem">
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+        <span>📱 Bağlı Hesaplar</span>
+        <span style="font-size:.78rem; color:var(--text-muted)" id="accFilterNotice">Tüm kullanıcılar gösteriliyor</span>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:.8rem; margin-top:1rem" id="accountsGrid">
+        {% for acc in accounts %}
+        <div class="card account-row-card" data-user-id="{{ acc.user_id or 0 }}" style="padding:.9rem; margin:0; border:1px solid var(--border); background:var(--surface2); display:flex; flex-direction:column; justify-content:space-between; gap:.6rem">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start">
+            <div style="display:flex; align-items:center; gap:.6rem">
+              <div class="account-avatar" style="width:36px; height:36px; font-size:.9rem">{{ (acc.name or '?')[0].upper() }}</div>
+              <div>
+                <div style="font-weight:700; font-size:.88rem">{{ acc.name }}</div>
+                <div style="font-size:.75rem; color:var(--text-muted)">{{ acc.phone }}</div>
+              </div>
+            </div>
+            <div>
+              {% if acc.owner %}
+              <span class="badge badge-user" style="font-size:.7rem">{{ acc.owner.display_name }}</span>
+              {% else %}
+              <span class="badge badge-yellow" style="font-size:.7rem">Sahipsiz</span>
+              {% endif %}
+            </div>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; font-size:.75rem; border-top:1px solid rgba(255,255,255,.05); padding-top:.5rem">
+            <div>
+              {% if acc.id in active_client_ids %}
+              <span style="color:#4ade80; font-weight:600">● Bağlı & Dinliyor</span>
+              {% else %}
+              <span style="color:#f87171; font-weight:600">⚠ Bağlantı Bekleniyor</span>
+              {% endif %}
+              <span style="color:var(--text-muted); margin-left:.4rem">({{ acc.rules|length }} kural)</span>
+            </div>
+
+            <!-- Action buttons -->
+            <div style="display:flex; gap:.3rem">
+              <button class="act-btn" title="İsmi Düzenle" onclick="openRenameAccountModal({{ acc.id }}, '{{ acc.name }}')">✏️</button>
+              <button class="act-btn act-btn-gold" title="Başka Kullanıcıya Taşı" onclick="openMoveAccountModal({{ acc.id }}, '{{ acc.name }}', {{ acc.user_id or 0 }})">🔁 Taşı</button>
+              <button class="act-btn act-btn-gold" title="Başka Kullanıcıya Kopyala" onclick="openCopyAccountModal({{ acc.id }}, '{{ acc.name }}', {{ acc.user_id or 0 }})">📋 Kopyala</button>
+              <form action="/accounts/{{ acc.id }}/delete" method="POST" style="display:inline" onsubmit="return confirm('Bu hesabı silmek istediğinize emin misiniz?')">
+                <button type="submit" class="act-btn act-btn-danger" title="Sil">🗑️</button>
+              </form>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- KURALLAR BÖLÜMÜ -->
+    <div class="card">
+      <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+        <span>📡 İletim Kuralları</span>
+        <button class="act-btn act-btn-gold" onclick="openAddRuleModal()">➕ Yeni Kural Ekle</button>
+      </div>
+
+      <div class="rules-table-wrap" style="margin-top:1rem">
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th>Kullanıcı / Hesap</th>
+              <th>Kaynak → Hedef</th>
+              <th>Gönderen</th>
+              <th>Açıklama</th>
+              <th>Filtreler</th>
+              <th>Durum</th>
+              <th style="text-align:right">Eylemler</th>
+            </tr>
+          </thead>
+          <tbody id="rulesTableBody">
+            {% for r in rules %}
+            <tr class="rule-row" data-user-id="{{ r.account.user_id if r.account else 0 }}">
+              <td>
+                <span class="badge badge-user">{{ r.account.owner.display_name if r.account and r.account.owner else '—' }}</span>
+                <span style="font-size:.78rem; font-weight:600; margin-left:.3rem">{{ r.account.name if r.account else '?' }}</span>
+              </td>
+              <td>
+                <div class="route-arrow">
+                  <code style="font-size:.75rem; color:#93c5fd">{{ r.source_chat_id }}</code>
+                  <span>→</span>
+                  <code style="font-size:.75rem; color:#c4b5fd">{{ r.destination_id }}</code>
+                </div>
+              </td>
+              <td class="text-sm text-muted">{{ r.sender_id or 'Herkes' }}</td>
+              <td class="text-sm">{{ r.description or '—' }}</td>
+              <td>
+                <span class="badge badge-blue" style="font-size:.7rem">{{ r.filters|length }} filtre</span>
+              </td>
+              <td>
+                {% if r.is_active %}
+                <span style="color:#4ade80; font-size:.75rem; font-weight:600">● Aktif</span>
+                {% else %}
+                <span style="color:#fbbf24; font-size:.75rem; font-weight:600">⏸ Durdu</span>
+                {% endif %}
+              </td>
+              <td style="text-align:right">
+                <div style="display:inline-flex; gap:.3rem">
+                  <button class="act-btn" title="Kuralı Düzenle" onclick="openEditRuleModal({{ r.id }}, '{{ r.source_chat_id }}', '{{ r.destination_id }}', '{{ r.sender_id or '' }}', '{{ r.description or '' }}', {{ r.account_id }}, {{ 'true' if r.block_links else 'false' }}, '{{ r.replace_link or '' }}')">
+                    ✏️ Düzenle
+                  </button>
+                  <button class="act-btn act-btn-gold" title="Kuralı Başka Hesaba Kopyala" onclick="openCopyRuleModal({{ r.id }}, {{ r.account_id }})">
+                    📋 Kopyala
+                  </button>
+                  <button class="act-btn act-btn-gold" title="Kuralı Başka Hesaba Taşı" onclick="openMoveRuleModal({{ r.id }}, {{ r.account_id }})">
+                    🔁 Taşı
+                  </button>
+                  <form action="/rules/{{ r.id }}/delete" method="POST" style="display:inline" onsubmit="return confirm('Bu kuralı silmek istediğinize emin misiniz?')">
+                    <button type="submit" class="act-btn act-btn-danger" title="Sil">🗑️</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TAB 2: KULLANICI & ŞİFRE YÖNETİMİ                                -->
+  <!-- ================================================================= -->
+  <div id="tab-users" class="tab-pane">
+    <div class="card">
+      <div class="card-title">🔐 Kullanıcı Hesapları & Şifre Güncelleme</div>
+      <p style="font-size:.82rem; color:var(--text-muted); margin-bottom:1.5rem">
+        Tüm panellerin (Levent, Kayhan, Murat, Türkan, Alper, Ortak Bölge, Cüneyt) giriş şifrelerini buradan tek tıkla değiştirebilirsiniz.
+      </p>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:1rem">
+        {% for u in users %}
+        <div class="card" style="background:var(--surface2); border:1px solid var(--border); padding:1.2rem">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+            <div style="display:flex; align-items:center; gap:.6rem">
+              <div class="user-avatar" style="width:40px; height:40px; background:var(--primary-g); border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700">
+                {{ u.display_name[0].upper() }}
+              </div>
+              <div>
+                <div style="font-weight:700; font-size:1rem">{{ u.display_name }}</div>
+                <div style="font-size:.78rem; color:var(--text-muted)">@{{ u.username }}</div>
+              </div>
+            </div>
+            <div style="text-align:right">
+              <span class="badge badge-user">{{ user_acc_counts.get(u.id, 0) }} Hesap</span>
+            </div>
+          </div>
+
+          <form action="/hukumdar/users/change-password" method="POST" style="margin-top:.8rem">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Yeni Şifre</label>
+            <div style="display:flex; gap:.4rem">
+              <input type="text" name="new_password" id="pwd_field_{{ u.id }}" placeholder="Yeni güçlü şifre..." required style="flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.55rem .8rem; color:white; font-size:.88rem">
+              <button type="button" class="act-btn" onclick="genPassword('pwd_field_{{ u.id }}')" title="Rastgele Şifre Üret">🎲 Üret</button>
+              <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.55rem 1rem; border-radius:8px; border:none; cursor:pointer">
+                Kaydet
+              </button>
+            </div>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TAB 3: GÖREVLER & BİLDİRİMLER                                     -->
+  <!-- ================================================================= -->
+  <div id="tab-tasks" class="tab-pane">
+    <div style="display:grid; grid-template-columns:360px 1fr; gap:1.5rem; align-items:start">
+
+      <!-- YENİ GÖREV EKLE -->
+      <div class="card">
+        <div class="card-title">📌 Yeni Görev / Bildirim Ata</div>
+        <form action="/hukumdar/tasks/create" method="POST" style="display:flex; flex-direction:column; gap:.8rem; margin-top:1rem">
+          <div>
+            <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Hedef Kullanıcı</label>
+            <select name="user_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+              <option value="">Seçiniz...</option>
+              <option value="all">📢 Tüm Kullanıcılara Ata</option>
+              {% for u in users %}
+              <option value="{{ u.id }}">{{ u.display_name }} (@{{ u.username }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Başlık</label>
+            <input type="text" name="title" placeholder="Örn: X Grubu kontrolü" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+          </div>
+
+          <div>
+            <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Açıklama / Talimat</label>
+            <textarea name="content" rows="3" placeholder="Örn: 2 saat içinde A grubundaki reklamları temizleyin..." required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px; resize:vertical"></textarea>
+          </div>
+
+          <div>
+            <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Son Tarih / Süre (Opsiyonel)</label>
+            <input type="datetime-local" name="deadline" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+          </div>
+
+          <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px; margin-top:.4rem">
+            📌 Görevi Gönder
+          </button>
+        </form>
+      </div>
+
+      <!-- GÖREV LİSTESİ -->
+      <div class="card">
+        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+          <span>📋 Verilen Görevler & Geri Bildirimler</span>
+          <span style="font-size:.78rem; color:var(--text-muted)">{{ tasks|length }} Görev</span>
+        </div>
+
+        {% if tasks %}
+        <div style="display:flex; flex-direction:column; gap:.8rem; margin-top:1rem">
+          {% for t in tasks %}
+          <div class="card" style="background:var(--surface2); border:1px solid {{ 'var(--gold-border)' if t.status == 'pending' else 'rgba(74,222,128,.3)' }}; padding:1rem; margin:0">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:.4rem">
+              <div>
+                <span class="badge {{ 'badge-gold' if t.status == 'pending' else 'badge-green' }}" style="font-size:.7rem">
+                  {{ '⏳ Bekliyor' if t.status == 'pending' else '✅ Tamamlandı' }}
+                </span>
+                <span class="badge badge-user" style="font-size:.7rem; margin-left:.3rem">
+                  Kime: {{ t.user.display_name if t.user else 'Genel' }}
+                </span>
+                <h3 style="font-size:1rem; font-weight:700; margin-top:.4rem">{{ t.title }}</h3>
+              </div>
+
+              <div style="display:flex; gap:.3rem">
+                <form action="/hukumdar/tasks/{{ t.id }}/status" method="POST" style="display:inline">
+                  <input type="hidden" name="status" value="{{ 'completed' if t.status == 'pending' else 'pending' }}">
+                  <button type="submit" class="act-btn" title="Durum Değiştir">
+                    {{ 'Tamamlandı Yap' if t.status == 'pending' else 'Geri Al' }}
+                  </button>
+                </form>
+                <form action="/hukumdar/tasks/{{ t.id }}/delete" method="POST" style="display:inline" onsubmit="return confirm('Bu görevi silmek istediğinize emin misiniz?')">
+                  <button type="submit" class="act-btn act-btn-danger" title="Sil">🗑️</button>
+                </form>
+              </div>
+            </div>
+
+            <p style="font-size:.85rem; color:#cbd5e1; margin:.4rem 0">{{ t.content }}</p>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:.75rem; color:var(--text-muted); border-top:1px solid rgba(255,255,255,.05); padding-top:.5rem; margin-top:.5rem">
+              <span>📅 Oluşturuldu: {{ t.created_at[:16] }}</span>
+              {% if t.deadline %}
+              <span style="color:var(--gold)">⏳ Son Teslim: {{ t.deadline.replace('T', ' ') }}</span>
+              {% endif %}
+            </div>
+
+            {% if t.feedback %}
+            <div style="margin-top:.6rem; padding:.6rem .8rem; background:rgba(74,222,128,.08); border-left:3px solid #4ade80; border-radius:4px; font-size:.82rem">
+              <b style="color:#4ade80">Kullanıcı Geri Bildirimi:</b> {{ t.feedback }}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty" style="padding:2rem">
+          <p>Henüz verilmiş bir görev veya not bulunmuyor.</p>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <!-- TAB 4: GRUP/KANAL ORTAK ÜYE ANALİZİ                               -->
+  <!-- ================================================================= -->
+  <div id="tab-members" class="tab-pane">
+    <div style="display:grid; grid-template-columns:380px 1fr; gap:1.5rem; align-items:start">
+
+      <!-- SOL KOLON: TARAMA FORMU & FİLTRE LİSTESİ -->
+      <div>
+        <div class="card" style="margin-bottom:1.5rem">
+          <div class="card-title">🔍 İki Grup Arasında Ortak Üye Bul</div>
+          <p style="font-size:.8rem; color:var(--text-muted); margin-top:.2rem">
+            Seçtiğiniz hesap üzerinden Kaynak ve Hedef gruptaki üyeleri karşılaştırıp her iki grupta da olan ortak kişileri bulur.
+          </p>
+
+          <form id="inspectForm" onsubmit="runMemberInspection(event)" style="display:flex; flex-direction:column; gap:.8rem; margin-top:1rem">
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Taramayı Yapacak Hesap</label>
+              <select id="inspect_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+                <option value="">Hesap seçin...</option>
+                {% for acc in accounts %}
+                <option value="{{ acc.id }}">{{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Grup A (Kaynak Grup / Kanal ID veya Link)</label>
+              <input type="text" id="inspect_chat_a" placeholder="-100xxxx veya t.me/grupA" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+            </div>
+
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Grup B (Hedef Grup / Kanal ID veya Link)</label>
+              <input type="text" id="inspect_chat_b" placeholder="-100yyyy veya t.me/grupB" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+            </div>
+
+            <button type="submit" id="inspectSubmitBtn" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px; margin-top:.4rem">
+              🔎 Ortak Üyeleri Tara
+            </button>
+          </form>
+        </div>
+
+        <!-- YOK SAYILAN / FİLTRELENEN HESAPLAR -->
+        <div class="card">
+          <div class="card-title">🚫 Gösterilmeyecek Hesaplar (Filtre)</div>
+          <p style="font-size:.78rem; color:var(--text-muted); margin-top:.2rem">
+            Her iki grupta da olan ancak listede görünmesini istemediğiniz kendi admin veya bot hesaplarınızın ID veya telefonlarını buraya ekleyin.
+          </p>
+
+          <form action="/ignored-members/add" method="POST" style="display:flex; gap:.4rem; margin-top:.8rem">
+            <input type="text" name="identifier" placeholder="ID veya Telefon (+905...)" required style="flex:1; background:var(--surface2); border:1px solid var(--border); color:white; padding:.5rem .7rem; border-radius:6px; font-size:.82rem">
+            <button type="submit" class="act-btn act-btn-gold" style="padding:.5rem .8rem">+ Ekle</button>
+          </form>
+
+          <div style="margin-top:.8rem; max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem">
+            {% for im in ignored_members %}
+            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface2); padding:.35rem .6rem; border-radius:6px; font-size:.78rem">
+              <code>{{ im.identifier }}</code>
+              <form action="/ignored-members/{{ im.id }}/delete" method="POST" style="display:inline">
+                <button type="submit" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:.75rem">✕</button>
+              </form>
+            </div>
+            {% else %}
+            <div style="font-size:.75rem; color:var(--text-muted); padding:.5rem 0">Henüz filtrelenmiş numara/ID yok.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- SAĞ KOLON: TARAMA SONUÇLARI -->
+      <div class="card">
+        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+          <span>👥 Ortak Katılımcılar Listesi</span>
+          <span id="resultCountBadge" class="badge badge-gold" style="display:none">0 Ortak Üye</span>
+        </div>
+
+        <div id="inspectLoading" style="display:none; text-align:center; padding:3rem 1rem">
+          <div class="spin-icon" style="width:24px; height:24px; border-width:3px; margin-bottom:.5rem"></div>
+          <div style="font-size:.88rem; color:var(--text-muted)">Grup üyeleri taranıyor ve karşılaştırılıyor, lütfen bekleyin...</div>
+        </div>
+
+        <div id="inspectEmptyState" style="text-align:center; padding:3rem 1rem; color:var(--text-muted); font-size:.85rem">
+          Sol taraftaki formu doldurup "Ortak Üyeleri Tara" butonuna bastığınızda iki grupta ortak bulunan kişiler burada listelenecektir.
+        </div>
+
+        <div id="inspectResultsArea" style="display:none; margin-top:1rem">
+          <div style="display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap">
+            <div style="background:var(--surface2); border:1px solid var(--border); padding:.5rem 1rem; border-radius:8px; font-size:.82rem">
+              Grup A Üye Sayısı: <b id="cntGroupA" style="color:#93c5fd">0</b>
+            </div>
+            <div style="background:var(--surface2); border:1px solid var(--border); padding:.5rem 1rem; border-radius:8px; font-size:.82rem">
+              Grup B Üye Sayısı: <b id="cntGroupB" style="color:#c4b5fd">0</b>
+            </div>
+            <div style="background:var(--gold-surface); border:1px solid var(--gold-border); padding:.5rem 1rem; border-radius:8px; font-size:.82rem">
+              Ortak Üyeler: <b id="cntCommon" style="color:var(--gold)">0</b>
+            </div>
+          </div>
+
+          <div class="rules-table-wrap">
+            <table class="rules-table">
+              <thead>
+                <tr>
+                  <th>İsim</th>
+                  <th>Kullanıcı Adı</th>
+                  <th>ID</th>
+                  <th>Telefon</th>
+                  <th style="text-align:right">Eylemler (Yetkili İse)</th>
+                </tr>
+              </thead>
+              <tbody id="inspectResultsTableBody">
+                <!-- Javascript ile doldurulacak -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ================================================================= -->
+<!-- MODALLAR (RENAME, MOVE, COPY, EDIT RULE)                          -->
+<!-- ================================================================= -->
+
+<!-- 1. HESAP İSMİ DÜZENLE MODALI -->
+<div id="modalRenameAccount" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">✏️ Hesap İsmini Düzenle</h3>
+      <button class="act-btn" onclick="closeModal('modalRenameAccount')">✕</button>
+    </div>
+    <form action="/accounts/rename" method="POST" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" name="account_id" id="rename_acc_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Yeni Hesap İsmi</label>
+        <input type="text" name="name" id="rename_acc_name" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+      </div>
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px">
+        Kaydet
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- 2. HESAP TAŞI MODALI -->
+<div id="modalMoveAccount" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">🔁 Hesabı Başka Kullanıcıya Taşı</h3>
+      <button class="act-btn" onclick="closeModal('modalMoveAccount')">✕</button>
+    </div>
+    <form action="/hukumdar/accounts/move" method="POST" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" name="account_id" id="move_acc_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Taşınacak Hesap</label>
+        <input type="text" id="move_acc_name" readonly style="width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); padding:.7rem; border-radius:8px">
+      </div>
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Yeni Sahip (Hedef Kullanıcı)</label>
+        <select name="target_user_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.display_name }} (@{{ u.username }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px">
+        Hesabı Taşı
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- 3. HESAP KOPYALA MODALI -->
+<div id="modalCopyAccount" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">📋 Hesabı Başka Kullanıcıya Kopyala</h3>
+      <button class="act-btn" onclick="closeModal('modalCopyAccount')">✕</button>
+    </div>
+    <form action="/hukumdar/accounts/copy" method="POST" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" name="account_id" id="copy_acc_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kopyalanacak Hesap</label>
+        <input type="text" id="copy_acc_name" readonly style="width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); padding:.7rem; border-radius:8px">
+      </div>
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kopyalanacağı Kullanıcı</label>
+        <select name="target_user_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+          {% for u in users %}
+          <option value="{{ u.id }}">{{ u.display_name }} (@{{ u.username }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label style="font-size:.8rem; display:flex; align-items:center; gap:.5rem; color:white">
+        <input type="checkbox" name="copy_rules" value="true" checked>
+        Bağlı tüm iletim kurallarını ve kelime filtrelerini de kopyala
+      </label>
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px">
+        Hesabı Kopyala
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- 4. KURAL DÜZENLE MODALI -->
+<div id="modalEditRule" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">✏️ İletim Kuralını Düzenle</h3>
+      <button class="act-btn" onclick="closeModal('modalEditRule')">✕</button>
+    </div>
+    <form action="/rules/edit" method="POST" style="display:flex; flex-direction:column; gap:.9rem">
+      <input type="hidden" name="rule_id" id="edit_rule_id">
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">İleten Hesap</label>
+        <select name="account_id" id="edit_rule_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+          {% for acc in accounts %}
+          <option value="{{ acc.id }}">{{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kaynak Grup / Kanal ID</label>
+        <input type="text" name="source_chat_id" id="edit_rule_source" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Hedef Grup / Kanal ID</label>
+        <input type="text" name="destination_id" id="edit_rule_dest" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Gönderen Kişi / Bot ID (Opsiyonel)</label>
+        <input type="text" name="sender_id" id="edit_rule_sender" placeholder="Boş bırakılırsa herkes" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kural İsmi / Açıklama</label>
+        <input type="text" name="description" id="edit_rule_desc" placeholder="Örn: VIP Kanal iletimi" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.8rem; display:flex; align-items:center; gap:.5rem; color:white">
+          <input type="checkbox" name="block_links" id="edit_rule_block_links" value="true">
+          Linkli mesajları engelle
+        </label>
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Linkleri Şununla Değiştir (Opsiyonel)</label>
+        <input type="text" name="replace_link" id="edit_rule_replace_link" placeholder="Örn: https://t.me/bizimkanal" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px; margin-top:.4rem">
+        Değişiklikleri Kaydet
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- 5. KURAL KOPYALA / TAŞI MODALLARI -->
+<div id="modalCopyRule" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">📋 Kuralı Başka Hesaba Kopyala</h3>
+      <button class="act-btn" onclick="closeModal('modalCopyRule')">✕</button>
+    </div>
+    <form action="/hukumdar/rules/copy" method="POST" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" name="rule_id" id="copy_rule_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kuralın Kopyalanacağı Hedef Hesap</label>
+        <select name="target_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+          {% for acc in accounts %}
+          <option value="{{ acc.id }}">{{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <p style="font-size:.8rem; color:var(--text-muted)">Kuralın tüm kelime filtreleri ve link ayarları birebir kopyalanacaktır.</p>
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px">
+        Kuralı Kopyala
+      </button>
+    </form>
+  </div>
+</div>
+
+<div id="modalMoveRule" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">🔁 Kuralı Başka Hesaba Taşı</h3>
+      <button class="act-btn" onclick="closeModal('modalMoveRule')">✕</button>
+    </div>
+    <form action="/hukumdar/rules/move" method="POST" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" name="rule_id" id="move_rule_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kuralın Taşınacağı Yeni Hesap</label>
+        <select name="target_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+          {% for acc in accounts %}
+          <option value="{{ acc.id }}">{{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px">
+        Kuralı Taşı
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+function showTab(tabId) {
+  document.querySelectorAll('.h-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function filterByUser(userId, btn) {
+  document.querySelectorAll('.user-pill-filter').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  const accCards = document.querySelectorAll('.account-row-card');
+  const ruleRows = document.querySelectorAll('.rule-row');
+
+  accCards.forEach(c => {
+    if (userId === 'all' || c.getAttribute('data-user-id') === userId) {
+      c.style.display = 'flex';
+    } else {
+      c.style.display = 'none';
+    }
+  });
+
+  ruleRows.forEach(r => {
+    if (userId === 'all' || r.getAttribute('data-user-id') === userId) {
+      r.style.display = '';
+    } else {
+      r.style.display = 'none';
+    }
+  });
+
+  document.getElementById('accFilterNotice').innerText = userId === 'all' ? 'Tüm kullanıcılar gösteriliyor' : 'Filtrelenmiş görünüm';
+}
+
+function genPassword(elementId) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*';
+  let pwd = '';
+  for(let i=0; i<14; i++) {
+    pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  document.getElementById(elementId).value = pwd;
+}
+
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function closeModalsOnOverlay(e) {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.style.display = 'none';
+  }
+}
+
+function openRenameAccountModal(accId, name) {
+  document.getElementById('rename_acc_id').value = accId;
+  document.getElementById('rename_acc_name').value = name;
+  openModal('modalRenameAccount');
+}
+
+function openMoveAccountModal(accId, name, userId) {
+  document.getElementById('move_acc_id').value = accId;
+  document.getElementById('move_acc_name').value = name;
+  openModal('modalMoveAccount');
+}
+
+function openCopyAccountModal(accId, name, userId) {
+  document.getElementById('copy_acc_id').value = accId;
+  document.getElementById('copy_acc_name').value = name;
+  openModal('modalCopyAccount');
+}
+
+function openEditRuleModal(ruleId, source, dest, sender, desc, accId, blockLinks, replaceLink) {
+  document.getElementById('edit_rule_id').value = ruleId;
+  document.getElementById('edit_rule_source').value = source;
+  document.getElementById('edit_rule_dest').value = dest;
+  document.getElementById('edit_rule_sender').value = sender;
+  document.getElementById('edit_rule_desc').value = desc;
+  document.getElementById('edit_rule_account_id').value = accId;
+  document.getElementById('edit_rule_block_links').checked = blockLinks;
+  document.getElementById('edit_rule_replace_link').value = replaceLink;
+  openModal('modalEditRule');
+}
+
+function openCopyRuleModal(ruleId, accId) {
+  document.getElementById('copy_rule_id').value = ruleId;
+  openModal('modalCopyRule');
+}
+
+function openMoveRuleModal(ruleId, accId) {
+  document.getElementById('move_rule_id').value = ruleId;
+  openModal('modalMoveRule');
+}
+
+// -------------------------------------------------------------
+// ORTAK ÜYE TARAMA (AJAX)
+// -------------------------------------------------------------
+async function runMemberInspection(e) {
+  e.preventDefault();
+  const accId = document.getElementById('inspect_account_id').value;
+  const chatA = document.getElementById('inspect_chat_a').value.trim();
+  const chatB = document.getElementById('inspect_chat_b').value.trim();
+
+  const loading = document.getElementById('inspectLoading');
+  const emptyState = document.getElementById('inspectEmptyState');
+  const resultsArea = document.getElementById('inspectResultsArea');
+  const submitBtn = document.getElementById('inspectSubmitBtn');
+
+  loading.style.display = 'block';
+  emptyState.style.display = 'none';
+  resultsArea.style.display = 'none';
+  submitBtn.disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('account_id', accId);
+    formData.append('chat_a', chatA);
+    formData.append('chat_b', chatB);
+
+    const resp = await fetch('/members/inspect', {
+      method: 'POST',
+      body: formData
+    });
+    const data = await resp.json();
+
+    loading.style.display = 'none';
+    submitBtn.disabled = false;
+
+    if (!resp.ok || data.error) {
+      alert('Hata: ' + (data.error || 'Tarama başarısız oldu.'));
+      emptyState.style.display = 'block';
+      return;
+    }
+
+    resultsArea.style.display = 'block';
+    document.getElementById('cntGroupA').innerText = data.count_a || 0;
+    document.getElementById('cntGroupB').innerText = data.count_b || 0;
+    document.getElementById('cntCommon').innerText = data.common_count || 0;
+    document.getElementById('resultCountBadge').innerText = (data.common_count || 0) + ' Ortak Üye';
+    document.getElementById('resultCountBadge').style.display = 'inline-block';
+
+    const tbody = document.getElementById('inspectResultsTableBody');
+    tbody.innerHTML = '';
+
+    if (!data.common_members || data.common_members.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem">İki grup arasında filtrelenmemiş ortak üye bulunamadı.</td></tr>';
+      return;
+    }
+
+    data.common_members.forEach(m => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><b>${m.name || '—'}</b></td>
+        <td>${m.username ? '@' + m.username : '—'}</td>
+        <td><code>${m.id}</code></td>
+        <td>${m.phone || 'Gizli'}</td>
+        <td style="text-align:right">
+          <div style="display:inline-flex; gap:.3rem">
+            <button class="act-btn act-btn-danger" onclick="kickMember(${accId}, '${chatA}', ${m.id}, 'Kaynak Grup A')">Gruptan Çıkar (A)</button>
+            <button class="act-btn act-btn-danger" onclick="kickMember(${accId}, '${chatB}', ${m.id}, 'Hedef Grup B')">Gruptan Çıkar (B)</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+  } catch (err) {
+    loading.style.display = 'none';
+    submitBtn.disabled = false;
+    emptyState.style.display = 'block';
+    alert('Sunucu hatası: ' + err.message);
+  }
+}
+
+async function kickMember(accId, chatId, userId, chatLabel) {
+  if (!confirm(`${userId} ID'li kullanıcı ${chatLabel} grubundan çıkarılsın mı?`)) return;
+  try {
+    const fd = new FormData();
+    fd.append('account_id', accId);
+    fd.append('chat_id', chatId);
+    fd.append('user_id', userId);
+
+    const resp = await fetch('/members/kick', { method: 'POST', body: fd });
+    const res = await resp.json();
+    if (res.ok) {
+      alert('Kullanıcı başarıyla gruptan çıkarıldı!');
+    } else {
+      alert('Hata: ' + (res.error || 'Yetki yetersiz veya çıkarılamadı.'));
+    }
+  } catch (e) {
+    alert('İşlem hatası: ' + e.message);
+  }
+}
+</script>
+</body>
+</html>

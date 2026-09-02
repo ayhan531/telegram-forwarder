@@ -73,6 +73,38 @@
       <p>Mesajları otomatik olarak gruplar arasında ilet</p>
     </div>
 
+    <!-- ── HÜKÜMDAR BİLDİRİMLERİ / GÖREVLERİ ── -->
+    {% if pending_tasks %}
+    <div style="margin-bottom:1.5rem; display:flex; flex-direction:column; gap:.8rem">
+      {% for t in pending_tasks %}
+      <div class="card" style="border:1px solid #f59e0b; background:linear-gradient(135deg, rgba(245,158,11,.12) 0%, rgba(16,16,24,1) 100%); margin:0; padding:1.2rem">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:.5rem">
+          <div>
+            <div style="display:flex; align-items:center; gap:.5rem">
+              <span style="font-size:1.1rem">👑</span>
+              <span style="font-size:.75rem; font-weight:700; color:#f59e0b; text-transform:uppercase; letter-spacing:.05em">Hükümdar Görevi / Bildirimi</span>
+              {% if t.deadline %}
+              <span style="background:rgba(245,158,11,.2); color:#f59e0b; font-size:.7rem; padding:.15rem .5rem; border-radius:10px; font-weight:600">
+                ⏳ Son Teslim: {{ t.deadline.replace('T', ' ') }}
+              </span>
+              {% endif %}
+            </div>
+            <h3 style="font-size:1.05rem; font-weight:700; margin-top:.4rem; color:white">{{ t.title }}</h3>
+            <p style="font-size:.85rem; color:#cbd5e1; margin-top:.3rem">{{ t.content }}</p>
+          </div>
+        </div>
+
+        <form action="/tasks/{{ t.id }}/complete" method="POST" style="display:flex; gap:.6rem; margin-top:.9rem; align-items:center; flex-wrap:wrap">
+          <input type="text" name="feedback" placeholder="Geri bildirim veya tamamlanma notu yazın (opsiyonel)..." style="flex:1; min-width:240px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:.55rem .8rem; color:white; font-size:.82rem">
+          <button type="submit" class="btn btn-primary" style="background:#f59e0b; color:#000; font-weight:700; padding:.55rem 1rem; border-radius:8px; font-size:.82rem; border:none; cursor:pointer">
+            ✅ Tamamlandı Olarak Bildir
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- ── HESAPLAR ── -->
     <div class="card">
       <div class="flex items-center justify-between mb-3">
@@ -125,8 +157,11 @@
               <span style="font-size:.65rem;color:#f87171;font-weight:600">⚠ Bağlanıyor...</span>
             {% endif %}
           </div>
-          <!-- Sağ taraf: sadece 3 ikon butonu -->
+          <!-- Sağ taraf: butonlar -->
           <div style="display:flex;flex-direction:column;gap:3px;margin-left:.5rem;flex-shrink:0" onclick="event.stopPropagation()">
+            <button onclick="openRenameAccountModal({{ acc.id }}, '{{ acc.name }}')" title="İsmi Düzenle"
+              style="width:28px;height:28px;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.08);color:#a5b4fc;border-radius:6px;cursor:pointer;font-size:.72rem;display:flex;align-items:center;justify-content:center;transition:background .15s"
+              onmouseover="this.style.background='rgba(99,102,241,.2)'" onmouseout="this.style.background='rgba(99,102,241,.08)'">✏️</button>
             <button onclick="pauseAccount({{ acc.id }}, this)" title="Durdur"
               style="width:28px;height:28px;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.08);color:#fbbf24;border-radius:6px;cursor:pointer;font-size:.75rem;display:flex;align-items:center;justify-content:center;transition:background .15s"
               onmouseover="this.style.background='rgba(251,191,36,.2)'" onmouseout="this.style.background='rgba(251,191,36,.08)'">⏸</button>
@@ -320,6 +355,16 @@
               </td>
               <td>
                 <div class="flex gap-2">
+                  <!-- Düzenle -->
+                  <button type="button" title="Kuralı Düzenle" class="btn btn-secondary" style="padding:.4rem .6rem; font-size:.75rem"
+                    onclick="openEditRuleModal({{ rule.id }}, '{{ rule.source_chat_id }}', '{{ rule.destination_id }}', '{{ rule.sender_id or '' }}', '{{ rule.description or '' }}', {{ rule.account_id }}, {{ 'true' if rule.block_links else 'false' }}, '{{ rule.replace_link or '' }}')">
+                    ✏️
+                  </button>
+                  <!-- Ortak Üye Analizi -->
+                  <button type="button" title="Grup Ortak Üye Analizi" class="btn btn-secondary" style="padding:.4rem .6rem; font-size:.75rem"
+                    onclick="openInspectRuleModal({{ rule.account_id }}, '{{ rule.source_chat_id }}', '{{ rule.destination_id }}')">
+                    👥
+                  </button>
                   <!-- Duraklat / Devam Et -->
                   <form action="/rules/{{ rule.id }}/toggle" method="POST">
                     <button type="submit" title="{{ 'Devam et' if not rule.is_active else 'Duraklat' }}"
@@ -840,6 +885,232 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ── YENİ FONKSİYONLAR VE MODALLAR ──
+function openRenameAccountModal(accId, name) {
+  document.getElementById('rename_acc_id').value = accId;
+  document.getElementById('rename_acc_name').value = name;
+  document.getElementById('modalRenameAccount').style.display = 'flex';
+}
+
+function openEditRuleModal(ruleId, source, dest, sender, desc, accId, blockLinks, replaceLink) {
+  document.getElementById('edit_rule_id').value = ruleId;
+  document.getElementById('edit_rule_source').value = source;
+  document.getElementById('edit_rule_dest').value = dest;
+  document.getElementById('edit_rule_sender').value = sender;
+  document.getElementById('edit_rule_desc').value = desc;
+  document.getElementById('edit_rule_account_id').value = accId;
+  document.getElementById('edit_rule_block_links').checked = blockLinks;
+  document.getElementById('edit_rule_replace_link').value = replaceLink;
+  document.getElementById('modalEditRule').style.display = 'flex';
+}
+
+function openInspectRuleModal(accId, source, dest) {
+  document.getElementById('inspect_rule_acc_id').value = accId;
+  document.getElementById('inspect_rule_chat_a').value = source;
+  document.getElementById('inspect_rule_chat_b').value = dest;
+  document.getElementById('modalInspectRule').style.display = 'flex';
+  document.getElementById('inspectRuleResults').style.display = 'none';
+  document.getElementById('inspectRuleEmpty').style.display = 'block';
+}
+
+function closeAppModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+async function doRuleMemberInspection(e) {
+  e.preventDefault();
+  const accId = document.getElementById('inspect_rule_acc_id').value;
+  const chatA = document.getElementById('inspect_rule_chat_a').value.trim();
+  const chatB = document.getElementById('inspect_rule_chat_b').value.trim();
+
+  const loading = document.getElementById('inspectRuleLoading');
+  const empty = document.getElementById('inspectRuleEmpty');
+  const results = document.getElementById('inspectRuleResults');
+  const btn = document.getElementById('btnDoInspect');
+
+  loading.style.display = 'block';
+  empty.style.display = 'none';
+  results.style.display = 'none';
+  btn.disabled = true;
+
+  try {
+    const fd = new FormData();
+    fd.append('account_id', accId);
+    fd.append('chat_a', chatA);
+    fd.append('chat_b', chatB);
+
+    const resp = await fetch('/members/inspect', { method: 'POST', body: fd });
+    const data = await resp.json();
+    loading.style.display = 'none';
+    btn.disabled = false;
+
+    if (!resp.ok || data.error) {
+      alert('Hata: ' + (data.error || 'Tarama yapılamadı.'));
+      empty.style.display = 'block';
+      return;
+    }
+
+    results.style.display = 'block';
+    document.getElementById('irCountA').innerText = data.count_a || 0;
+    document.getElementById('irCountB').innerText = data.count_b || 0;
+    document.getElementById('irCountCommon').innerText = data.common_count || 0;
+
+    const tbody = document.getElementById('irTableBody');
+    tbody.innerHTML = '';
+    if (!data.common_members || data.common_members.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:1.5rem">İki grup arasında ortak üye bulunamadı.</td></tr>';
+      return;
+    }
+
+    data.common_members.forEach(m => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><b>${m.name || '—'}</b></td>
+        <td>${m.username ? '@' + m.username : '—'}</td>
+        <td><code>${m.id}</code></td>
+        <td>${m.phone || 'Gizli'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch(err) {
+    loading.style.display = 'none';
+    btn.disabled = false;
+    empty.style.display = 'block';
+    alert('Hata: ' + err.message);
+  }
+}
 </script>
+
+<!-- MODAL: HESAP İSMİ DÜZENLE -->
+<div id="modalRenameAccount" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; align-items:center; justify-content:center; padding:1rem">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; width:440px; max-width:100%; padding:1.75rem">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">✏️ Hesap İsmini Düzenle</h3>
+      <button onclick="closeAppModal('modalRenameAccount')" style="background:none; border:none; color:var(--text-muted); font-size:1.2rem; cursor:pointer">✕</button>
+    </div>
+    <form action="/accounts/rename" method="POST" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" name="account_id" id="rename_acc_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Yeni Hesap İsmi</label>
+        <input type="text" name="name" id="rename_acc_name" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+      </div>
+      <button type="submit" class="btn btn-primary" style="padding:.75rem; font-weight:700">Kaydet</button>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: KURAL DÜZENLE -->
+<div id="modalEditRule" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; align-items:center; justify-content:center; padding:1rem">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; width:520px; max-width:100%; max-height:90vh; overflow-y:auto; padding:1.75rem">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">✏️ İletim Kuralını Düzenle</h3>
+      <button onclick="closeAppModal('modalEditRule')" style="background:none; border:none; color:var(--text-muted); font-size:1.2rem; cursor:pointer">✕</button>
+    </div>
+    <form action="/rules/edit" method="POST" style="display:flex; flex-direction:column; gap:.9rem">
+      <input type="hidden" name="rule_id" id="edit_rule_id">
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">İleten Hesap</label>
+        <select name="account_id" id="edit_rule_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+          {% for acc in accounts %}
+          <option value="{{ acc.id }}">{{ acc.name }} ({{ acc.phone }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kaynak Grup / Kanal ID</label>
+        <input type="text" name="source_chat_id" id="edit_rule_source" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Hedef Grup / Kanal ID</label>
+        <input type="text" name="destination_id" id="edit_rule_dest" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Gönderen Kişi / Bot ID (Opsiyonel)</label>
+        <input type="text" name="sender_id" id="edit_rule_sender" placeholder="Boş bırakılırsa herkes" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Kural İsmi / Açıklama</label>
+        <input type="text" name="description" id="edit_rule_desc" placeholder="Örn: VIP Kanal iletimi" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <div>
+        <label style="font-size:.8rem; display:flex; align-items:center; gap:.5rem; color:white">
+          <input type="checkbox" name="block_links" id="edit_rule_block_links" value="true">
+          Linkli mesajları engelle
+        </label>
+      </div>
+
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Linkleri Şununla Değiştir (Opsiyonel)</label>
+        <input type="text" name="replace_link" id="edit_rule_replace_link" placeholder="Örn: https://t.me/bizimkanal" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="padding:.75rem; font-weight:700">Değişiklikleri Kaydet</button>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: KURAL ORTAK ÜYE ANALİZİ -->
+<div id="modalInspectRule" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; align-items:center; justify-content:center; padding:1rem">
+  <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; width:650px; max-width:100%; max-height:90vh; overflow-y:auto; padding:1.75rem">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">👥 Kural Grubu Ortak Üye Analizi</h3>
+      <button onclick="closeAppModal('modalInspectRule')" style="background:none; border:none; color:var(--text-muted); font-size:1.2rem; cursor:pointer">✕</button>
+    </div>
+
+    <form onsubmit="doRuleMemberInspection(event)" style="display:flex; flex-direction:column; gap:.8rem; margin-bottom:1rem">
+      <input type="hidden" id="inspect_rule_acc_id">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:.8rem">
+        <div>
+          <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Grup A (Kaynak)</label>
+          <input type="text" id="inspect_rule_chat_a" readonly style="width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); padding:.55rem; border-radius:6px; font-size:.82rem">
+        </div>
+        <div>
+          <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Grup B (Hedef)</label>
+          <input type="text" id="inspect_rule_chat_b" readonly style="width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text-muted); padding:.55rem; border-radius:6px; font-size:.82rem">
+        </div>
+      </div>
+      <button type="submit" id="btnDoInspect" class="btn btn-primary" style="padding:.65rem; font-weight:700">🔍 Ortak Üyeleri Tara</button>
+    </form>
+
+    <div id="inspectRuleLoading" style="display:none; text-align:center; padding:2rem">
+      <div class="spin-icon" style="width:22px; height:22px; border-width:3px; margin-bottom:.5rem"></div>
+      <div style="font-size:.82rem; color:var(--text-muted)">Üyeler taranıyor, lütfen bekleyin...</div>
+    </div>
+
+    <div id="inspectRuleEmpty" style="text-align:center; color:var(--text-muted); font-size:.82rem; padding:1.5rem">
+      Taramayı başlatmak için yukarıdaki butona tıklayın.
+    </div>
+
+    <div id="inspectRuleResults" style="display:none">
+      <div style="display:flex; gap:.8rem; margin-bottom:.8rem; font-size:.8rem">
+        <span style="background:var(--surface2); padding:.3rem .6rem; border-radius:6px">Grup A: <b id="irCountA" style="color:#93c5fd">0</b></span>
+        <span style="background:var(--surface2); padding:.3rem .6rem; border-radius:6px">Grup B: <b id="irCountB" style="color:#c4b5fd">0</b></span>
+        <span style="background:rgba(245,158,11,.15); color:#f59e0b; padding:.3rem .6rem; border-radius:6px">Ortak: <b id="irCountCommon">0</b></span>
+      </div>
+
+      <div class="rules-table-wrap" style="max-height:260px; overflow-y:auto">
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th>İsim</th>
+              <th>Kullanıcı Adı</th>
+              <th>ID</th>
+              <th>Telefon</th>
+            </tr>
+          </thead>
+          <tbody id="irTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 </body>
 </html>

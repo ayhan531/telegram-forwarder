@@ -113,6 +113,29 @@ class TeacherReaction(Base):
     teacher = relationship("Teacher", back_populates="reactions")
 
 
+class UserTask(Base):
+    __tablename__ = "user_tasks"
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), index=True)
+    title      = Column(String)
+    content    = Column(String)
+    deadline   = Column(String, nullable=True)      # Bitiş tarihi / saati
+    status     = Column(String, default="pending")  # "pending", "completed"
+    feedback   = Column(String, nullable=True)      # Kullanıcının ilettiği geri bildirim
+    created_at = Column(String)                     # Oluşturulma tarihi
+    updated_at = Column(String, nullable=True)
+
+    user = relationship("User", backref="tasks")
+
+
+class IgnoredMember(Base):
+    __tablename__ = "ignored_members"
+    id         = Column(Integer, primary_key=True, index=True)
+    identifier = Column(String, unique=True, index=True)  # user_id, phone veya @username
+    note       = Column(String, nullable=True)
+    created_at = Column(String)
+
+
 def init_db():
     # ── Tabloları oluştur ──
     Base.metadata.create_all(bind=engine)
