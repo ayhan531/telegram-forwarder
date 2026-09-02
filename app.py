@@ -753,7 +753,7 @@ async def login_page(request: Request, db: Session = Depends(get_db)):
     try:
         if request.session.get("user_id"):
             return RedirectResponse(url="/", status_code=303)
-        users = db.query(User).all()
+        users = db.query(User).order_by(User.id.asc()).all()
         error = request.session.pop("login_error", None)
         return templates.TemplateResponse(request=request, name="login.html",
                                           context={"users": users, "error": error})

@@ -135,9 +135,13 @@ def init_db():
 
     # ── Varsayılan kullanıcıları oluştur ──
     _DEFAULT_USERS = [
-        ("kayhan",  "ky_5510_*",  "Kayhan"),
-        ("levent",  "lv_4432_?",  "Levent"),
-        ("cuneyt",  "cn_9821_!",  "Cüneyt"),
+        ("kayhan",       "ky_5510_*",         "Kayhan"),
+        ("levent",       "lv_4432_?",         "Levent"),
+        ("cuneyt",       "cn_9821_!",         "Cuneyt"),
+        ("murat",        "Mu#93!vK@8429_Px",  "Murat"),
+        ("turkan",       "Tu#82$zQ@7391_Wk",  "Türkan"),
+        ("alper",        "Al#71%wR@6173_Tm",  "Alper"),
+        ("ortak_bolge",  "Ob#60^tS@5284_Zy",  "Ortak Bölge"),
     ]
 
     db = SessionLocal()
@@ -179,9 +183,13 @@ def init_db():
 
         # Sifre ve display_name guncelle
         _updates = {
-            "cuneyt": ("Cuneyt", "cn_9821_!"),
-            "levent": ("Levent", "lv_4432_?"),
-            "kayhan": ("Kayhan", "ky_5510_*"),
+            "cuneyt":      ("Cuneyt",      "cn_9821_!"),
+            "levent":      ("Levent",      "lv_4432_?"),
+            "kayhan":      ("Kayhan",      "ky_5510_*"),
+            "murat":       ("Murat",       "Mu#93!vK@8429_Px"),
+            "turkan":      ("Türkan",      "Tu#82$zQ@7391_Wk"),
+            "alper":       ("Alper",       "Al#71%wR@6173_Tm"),
+            "ortak_bolge": ("Ortak Bölge", "Ob#60^tS@5284_Zy"),
         }
         for uname, (disp, pwd) in _updates.items():
             u = db.query(User).filter(User.username == uname).first()

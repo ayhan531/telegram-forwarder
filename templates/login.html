@@ -42,13 +42,15 @@
 
     .login-card {
       position: relative;
-      width: 420px;
+      width: 480px;
+      max-width: 95vw;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 20px;
-      padding: 2.5rem 2.5rem 2rem;
+      padding: 2.2rem 2.2rem 2rem;
       box-shadow: 0 25px 60px rgba(0,0,0,.5);
       animation: fadeUp .4s ease both;
+      margin: 1.5rem auto;
     }
 
     @keyframes fadeUp {
@@ -86,6 +88,10 @@
       grid-template-columns: 1fr 1fr;
       gap: .6rem;
       margin-bottom: 1.5rem;
+    }
+
+    .user-tile:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
     }
 
     .user-tile {
@@ -230,8 +236,10 @@ function selectUser(username, display) {
   document.querySelectorAll('.user-tile').forEach(t => t.style.background = 'var(--surface2)');
   
   const tile = document.getElementById('tile-' + username);
-  tile.style.borderColor = 'var(--primary)';
-  tile.style.background = 'rgba(99,102,241,.15)';
+  if (tile) {
+    tile.style.borderColor = 'var(--primary)';
+    tile.style.background = 'rgba(99,102,241,.15)';
+  }
 
   document.getElementById('usernameField').value = username;
   document.getElementById('selectedUserLabel').innerText = display + " için şifre girin";
