@@ -592,58 +592,74 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
 
                 try:
                     sent_msg = None
-                    media = event.message.media
 
-                    if media:
-                        is_voice      = False
-                        is_video_note = False
-                        is_sticker    = False
-                        is_photo      = isinstance(media, types.MessageMediaPhoto)
-                        filename      = None
-
-                        if isinstance(media, types.MessageMediaDocument):
-                            doc = media.document
-                            for attr in getattr(doc, "attributes", []):
-                                if isinstance(attr, types.DocumentAttributeAudio) and getattr(attr, "voice", False):
-                                    is_voice = True
-                                if isinstance(attr, types.DocumentAttributeVideo) and getattr(attr, "round_message", False):
-                                    is_video_note = True
-                                if isinstance(attr, types.DocumentAttributeSticker):
-                                    is_sticker = True
-                                if isinstance(attr, types.DocumentAttributeFilename):
-                                    filename = attr.file_name
-
-                        buf = io.BytesIO()
-                        if filename:
-                            buf.name = filename
-                        elif is_voice:
-                            buf.name = "voice.ogg"
-                        elif is_video_note:
-                            buf.name = "video_note.mp4"
-                        elif is_photo:
-                            buf.name = "photo.jpg"
-                        await client.download_media(event.message, file=buf)
-                        buf.seek(0)
-
-                        send_kwargs = dict(
-                            entity=int(rule.destination_id),
-                            file=buf,
-                            reply_to=reply_to_msg_id,
-                            voice_note=is_voice,
-                            video_note=is_video_note,
-                        )
-                        if not is_voice and not is_video_note and not is_sticker:
-                            send_kwargs["caption"] = caption
-
-                        sent_msg = await client.send_file(**send_kwargs)
-
-                    else:
-                        if caption:
-                            sent_msg = await client.send_message(
+                    # ── Kanalı / Grubu mesaj içerisinde belirt (Şuradan iletildi başlığı) ──
+                    if getattr(rule, 'show_forward_header', False):
+                        try:
+                            fwd_res = await client.forward_messages(
                                 int(rule.destination_id),
-                                message=caption,
-                                reply_to=reply_to_msg_id
+                                event.message
                             )
+                            if fwd_res:
+                                sent_msg = fwd_res[0] if isinstance(fwd_res, list) else fwd_res
+                                print(f"[{account.name}] 📢 Orijinal kaynak belirtilerek iletildi (msg={event.id} → {sent_msg.id})")
+                        except Exception as fwd_e:
+                            print(f"[{account.name}] ⚠️ Native forward yapılamadı ({fwd_e}), kopya ile gönderiliyor...")
+
+                    # Eğer show_forward_header kapalıysa veya native forward başarısız olduysa kopya olarak ilet:
+                    if not sent_msg:
+                        media = event.message.media
+
+                        if media:
+                            is_voice      = False
+                            is_video_note = False
+                            is_sticker    = False
+                            is_photo      = isinstance(media, types.MessageMediaPhoto)
+                            filename      = None
+
+                            if isinstance(media, types.MessageMediaDocument):
+                                doc = media.document
+                                for attr in getattr(doc, "attributes", []):
+                                    if isinstance(attr, types.DocumentAttributeAudio) and getattr(attr, "voice", False):
+                                        is_voice = True
+                                    if isinstance(attr, types.DocumentAttributeVideo) and getattr(attr, "round_message", False):
+                                        is_video_note = True
+                                    if isinstance(attr, types.DocumentAttributeSticker):
+                                        is_sticker = True
+                                    if isinstance(attr, types.DocumentAttributeFilename):
+                                        filename = attr.file_name
+
+                            buf = io.BytesIO()
+                            if filename:
+                                buf.name = filename
+                            elif is_voice:
+                                buf.name = "voice.ogg"
+                            elif is_video_note:
+                                buf.name = "video_note.mp4"
+                            elif is_photo:
+                                buf.name = "photo.jpg"
+                            await client.download_media(event.message, file=buf)
+                            buf.seek(0)
+
+                            send_kwargs = dict(
+                                entity=int(rule.destination_id),
+                                file=buf,
+                                reply_to=reply_to_msg_id,
+                                voice_note=is_voice,
+                                video_note=is_video_note,
+                            )
+                            if not is_voice and not is_video_note and not is_sticker:
+                                send_kwargs["caption"] = caption
+
+                            sent_msg = await client.send_file(**send_kwargs)
+
+                        else:
+                            if caption:
+                                sent_msg = await client.send_message(
+                                    int(rule.destination_id),
+                                    message=caption,
+                                    reply_to=reply_to_msg_id
+                                )
 
                     if sent_msg:
                         new_mapping = MessageMapping(
@@ -1295,6 +1311,7 @@ async def add_rule(
     sender_name: str = Form(None),
     destination_id: str = Form(...),
     description: str = Form(None),
+    show_forward_header: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     if not sender_id or sender_id.strip() == "":
@@ -1326,7 +1343,8 @@ async def add_rule(
         sender_id=sender_id,
         sender_name=sender_name.strip() if sender_name and sender_name.strip() else None,
         destination_id=destination_id,
-        description=description
+        description=description,
+        show_forward_header=show_forward_header
     )
     db.add(new_rule)
     db.commit()
@@ -1423,14 +1441,14 @@ async def update_rule_links(
     rule_id: int,
     block_links: bool = Form(False),
     replace_link: str = Form(None),
+    show_forward_header: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     rule = db.query(Rule).filter(Rule.id == rule_id).first()
     if rule:
         rule.block_links = block_links
-        # if replace_link is provided, block_links must be false since it doesn't make sense to block and replace. 
-        # But UI should handle this. Let's just save whatever is sent.
         rule.replace_link = replace_link if replace_link else None
+        rule.show_forward_header = show_forward_header
         db.commit()
     return RedirectResponse(url="/", status_code=303)
 
@@ -1611,6 +1629,7 @@ async def bulk_rules_add(request: Request, db: Session = Depends(get_db)):
         src  = await resolve(source_raw, client) or source_raw
         dest = await resolve(dest_raw, client)   or dest_raw
         sid  = await resolve(sender, client) if sender else None
+        show_fwd = bool(row.get("show_forward_header", False)) or bool(body.get("show_forward_header", False))
 
         new_rule = Rule(
             account_id=acc_id,
@@ -1618,7 +1637,8 @@ async def bulk_rules_add(request: Request, db: Session = Depends(get_db)):
             sender_id=sid,
             sender_name=sender_name,
             destination_id=dest,
-            description=description
+            description=description,
+            show_forward_header=show_fwd
         )
         db.add(new_rule)
         added += 1
@@ -2144,6 +2164,7 @@ async def edit_rule(
     description: str = Form(None),
     block_links: bool = Form(False),
     replace_link: str = Form(None),
+    show_forward_header: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     user = get_current_user(request, db)
@@ -2162,6 +2183,7 @@ async def edit_rule(
             rule.description = description.strip() if description and description.strip() else None
             rule.block_links = block_links
             rule.replace_link = replace_link.strip() if replace_link and replace_link.strip() else None
+            rule.show_forward_header = show_forward_header
             db.commit()
 
     ref = request.headers.get("referer", "/")
@@ -2179,6 +2201,7 @@ async def edit_rule_path(
     description: str = Form(None),
     block_links: bool = Form(False),
     replace_link: str = Form(None),
+    show_forward_header: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     return await edit_rule(
@@ -2192,6 +2215,7 @@ async def edit_rule_path(
         description=description,
         block_links=block_links,
         replace_link=replace_link,
+        show_forward_header=show_forward_header,
         db=db
     )
 
@@ -2312,7 +2336,8 @@ async def hukumdar_copy_account(
                     is_active=r.is_active,
                     description=r.description,
                     block_links=r.block_links,
-                    replace_link=r.replace_link
+                    replace_link=r.replace_link,
+                    show_forward_header=getattr(r, 'show_forward_header', False)
                 )
                 db.add(cloned_rule)
                 db.commit()
@@ -2359,7 +2384,8 @@ async def hukumdar_batch_transfer(
                         is_active=r.is_active,
                         description=f"{r.description or ''} (Kopya)",
                         block_links=r.block_links,
-                        replace_link=r.replace_link
+                        replace_link=r.replace_link,
+                        show_forward_header=getattr(r, 'show_forward_header', False)
                     )
                     db.add(cloned_r)
                     db.commit()
@@ -2390,7 +2416,8 @@ async def hukumdar_copy_rule(
             is_active=r.is_active,
             description=r.description,
             block_links=r.block_links,
-            replace_link=r.replace_link
+            replace_link=r.replace_link,
+            show_forward_header=getattr(r, 'show_forward_header', False)
         )
         db.add(cloned)
         db.commit()

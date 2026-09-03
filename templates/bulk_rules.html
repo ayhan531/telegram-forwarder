@@ -145,6 +145,13 @@
         <span>Her satır = bir kural. <b>Hesap</b> seç, <b>Kişi ID</b>'yi gir (boş bırakırsan o hesap gruptaki herkesi dinler).</span>
       </div>
 
+      <div style="margin-bottom:1rem; padding:.8rem 1rem; background:rgba(99,102,241,.08); border:1px solid rgba(99,102,241,.25); border-radius:8px">
+        <label style="display:flex; align-items:center; gap:.7rem; cursor:pointer; font-size:.85rem; color:#e2e8f0; font-weight:600">
+          <input type="checkbox" id="bulk_show_forward_header" style="width:18px; height:18px; accent-color:#6366f1; cursor:pointer">
+          <span>📢 <b>Kanalı veya grubu mesaj içerisinde belirt</b> <span style="font-size:.78rem; color:var(--muted); font-weight:400">(İşaretlenirse mesajın başında <b>Şuradan iletildi: Kaynak Kanal</b> başlığı görünür)</span></span>
+        </label>
+      </div>
+
       <table class="bulk-table" id="rulesTable">
         <thead>
           <tr>
@@ -334,11 +341,19 @@ async function submitAll() {
   btn.innerHTML = '<span class="spin"></span> Kaydediliyor...';
   btn.disabled = true;
 
+  const showFwd = Boolean(document.getElementById('bulk_show_forward_header')?.checked);
+
   try {
     const resp = await fetch('/rules/toplu', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source_chat_id: src, destination_id: dest, description: desc, rows })
+      body: JSON.stringify({
+        source_chat_id: src,
+        destination_id: dest,
+        description: desc,
+        show_forward_header: showFwd,
+        rows
+      })
     });
     const d = await resp.json();
     const banner = document.getElementById('resultBanner');

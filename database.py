@@ -67,6 +67,7 @@ class Rule(Base):
     description    = Column(String, nullable=True)
     block_links    = Column(Boolean, default=False)   # linkli mesajlari engelle
     replace_link   = Column(String, nullable=True)    # linkleri bununla degistir
+    show_forward_header = Column(Boolean, default=False)  # Kanali/grubu mesajda belirt (Suradan iletildi)
 
     account = relationship("Account",    back_populates="rules")
     filters = relationship("WordFilter", back_populates="rule", cascade="all, delete-orphan")
@@ -149,6 +150,7 @@ def init_db():
         "ALTER TABLE rules ADD COLUMN block_links BOOLEAN DEFAULT 0",
         "ALTER TABLE rules ADD COLUMN replace_link TEXT",
         "ALTER TABLE rules ADD COLUMN sender_name TEXT",
+        "ALTER TABLE rules ADD COLUMN show_forward_header BOOLEAN DEFAULT 0",
     ]
     for _sql in _migrations:
         try:

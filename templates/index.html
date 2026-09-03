@@ -265,6 +265,19 @@
             <input type="text" name="description" placeholder="Örn: VIP grup yönlendirme">
           </div>
 
+          <!-- Kanalı/Grubu Mesajda Belirt -->
+          <div class="field rule-form-full">
+            <label style="display:flex; align-items:center; gap:.75rem; cursor:pointer; font-weight:600; font-size:.88rem; color:#e2e8f0; background:var(--surface2); padding:.85rem 1.1rem; border-radius:10px; border:1px solid rgba(99,102,241,.3); transition:all .2s">
+              <input type="checkbox" name="show_forward_header" value="true" style="width:19px; height:19px; accent-color:#6366f1; cursor:pointer">
+              <span>
+                📢 <b>Kanalı veya grubu mesaj içerisinde belirtmek istiyor musunuz?</b>
+                <span style="display:block; font-size:.78rem; color:#94a3b8; font-weight:400; margin-top:.2rem">
+                  (İşaretlenirse iletilen mesajın başında <b>Şuradan iletildi: Kaynak Kanal</b> başlığı yer alır)
+                </span>
+              </span>
+            </label>
+          </div>
+
           <div class="rule-form-full" style="margin-top:.5rem">
             <button type="submit" class="btn btn-primary btn-lg btn-block">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
@@ -333,6 +346,9 @@
                   <code style="font-size:.78rem;color:#93c5fd">{{ rule.source_chat_id }}</code>
                   <span>→</span>
                   <code style="font-size:.78rem;color:#c4b5fd">{{ rule.destination_id }}</code>
+                  {% if rule.show_forward_header %}
+                    <span style="font-size:.65rem; background:rgba(34,197,94,.18); color:#4ade80; border:1px solid rgba(34,197,94,.35); padding:.1rem .4rem; border-radius:4px; margin-left:.3rem; font-weight:700" title="Kaynak kanal/grup mesajda 'Şuradan iletildi' başlığıyla görünür">📢 Kaynak Belirtiliyor</span>
+                  {% endif %}
                 </div>
               </td>
               <td class="text-sm text-muted">
@@ -380,9 +396,13 @@
                   <summary style="cursor:pointer;font-size:.78rem;color:var(--primary)">
                     Ayarlar
                   </summary>
-                  <div style="margin-top:.5rem; min-width: 150px;">
+                  <div style="margin-top:.5rem; min-width: 170px;">
                     <form action="/rules/{{ rule.id }}/link-settings" method="POST" class="flex flex-col gap-2">
-                      <label style="font-size:.75rem; display:flex; align-items:center; gap:0.5rem; color:white;">
+                      <label style="font-size:.75rem; display:flex; align-items:center; gap:0.5rem; color:white; cursor:pointer">
+                        <input type="checkbox" name="show_forward_header" value="true" {% if rule.show_forward_header %}checked{% endif %}>
+                        📢 Kanalı/Grubu belirt
+                      </label>
+                      <label style="font-size:.75rem; display:flex; align-items:center; gap:0.5rem; color:white; cursor:pointer">
                         <input type="checkbox" name="block_links" value="true" {% if rule.block_links %}checked{% endif %}>
                         Linkli mesajı engelle
                       </label>
@@ -396,7 +416,7 @@
                 <div class="flex gap-2">
                   <!-- Düzenle -->
                   <button type="button" title="Kuralı Düzenle" class="btn btn-secondary" style="padding:.4rem .6rem; font-size:.75rem"
-                    onclick="openEditRuleModal({{ rule.id }}, '{{ rule.source_chat_id }}', '{{ rule.destination_id }}', '{{ rule.sender_id or '' }}', '{{ rule.sender_name or '' }}', '{{ rule.description or '' }}', {{ rule.account_id }}, {{ 'true' if rule.block_links else 'false' }}, '{{ rule.replace_link or '' }}')">
+                    onclick="openEditRuleModal({{ rule.id }}, '{{ rule.source_chat_id }}', '{{ rule.destination_id }}', '{{ rule.sender_id or '' }}', '{{ rule.sender_name or '' }}', '{{ rule.description or '' }}', {{ rule.account_id }}, {{ 'true' if rule.block_links else 'false' }}, '{{ rule.replace_link or '' }}', {{ 'true' if rule.show_forward_header else 'false' }})">
                     ✏️
                   </button>
                   <!-- Ortak Üye Analizi -->
@@ -1071,7 +1091,7 @@ function openRenameAccountModal(accId, name) {
   document.getElementById('modalRenameAccount').style.display = 'flex';
 }
 
-function openEditRuleModal(ruleId, source, dest, sender, senderName, desc, accId, blockLinks, replaceLink) {
+function openEditRuleModal(ruleId, source, dest, sender, senderName, desc, accId, blockLinks, replaceLink, showForwardHeader) {
   document.getElementById('edit_rule_id').value = ruleId;
   document.getElementById('edit_rule_source').value = source;
   document.getElementById('edit_rule_dest').value = dest;
@@ -1081,6 +1101,7 @@ function openEditRuleModal(ruleId, source, dest, sender, senderName, desc, accId
   document.getElementById('edit_rule_account_id').value = accId;
   document.getElementById('edit_rule_block_links').checked = blockLinks;
   document.getElementById('edit_rule_replace_link').value = replaceLink;
+  document.getElementById('edit_rule_show_forward_header').checked = Boolean(showForwardHeader);
   document.getElementById('modalEditRule').style.display = 'flex';
 }
 
@@ -1227,6 +1248,13 @@ async function doRuleMemberInspection(e) {
         <label style="font-size:.8rem; display:flex; align-items:center; gap:.5rem; color:white">
           <input type="checkbox" name="block_links" id="edit_rule_block_links" value="true">
           Linkli mesajları engelle
+        </label>
+      </div>
+
+      <div>
+        <label style="font-size:.82rem; display:flex; align-items:center; gap:.6rem; color:#e2e8f0; cursor:pointer; background:var(--surface2); padding:.6rem .8rem; border-radius:8px; border:1px solid rgba(99,102,241,.3)">
+          <input type="checkbox" name="show_forward_header" id="edit_rule_show_forward_header" value="true" style="width:16px; height:16px; accent-color:#6366f1">
+          📢 <b>Kanalı/Grubu mesajda belirt</b> (Şuradan iletildi başlığı)
         </label>
       </div>
 
