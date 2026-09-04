@@ -4,6 +4,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 
 # Render'da /data persistent disk, lokalde . (mevcut dizin)
 DATA_DIR = os.environ.get("DATA_DIR", ".")
@@ -12,14 +13,13 @@ SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATA_DIR}/telegram_forwarder.db"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False, "timeout": 60},
-    pool_size=150,
-    max_overflow=100,
+    poolclass=NullPool,
 )
 
 # WAL modu: eş zamanlı okuma/yazma çakışmasını önler
 with engine.connect() as _conn:
     _conn.execute(text("PRAGMA journal_mode=WAL"))
-    _conn.execute(text("PRAGMA busy_timeout=10000"))
+    _conn.execute(text("PRAGMA busy_timeout=30000"))
     _conn.commit()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

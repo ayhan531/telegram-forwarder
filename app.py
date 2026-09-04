@@ -109,16 +109,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[System] Veritabanı başlatma hatası: {e}")
 
-    db = SessionLocal()
+    async def _staggered_start(acc_list):
+        for acc in acc_list:
+            asyncio.create_task(start_client(acc))
+            await asyncio.sleep(0.15)  # Telegram IP rate limitini ve TimeoutError'ı önler
+
     try:
-        accounts = db.query(Account).filter(Account.is_active == True).all()
-        print(f"[System] {len(accounts)} aktif hesap başlatılıyor...")
-        for account in accounts:
-            asyncio.create_task(start_client(account))
+        with SessionLocal() as db:
+            accounts = db.query(Account).filter(Account.is_active == True).all()
+            print(f"[System] {len(accounts)} aktif hesap kademeli başlatılıyor...")
+            asyncio.create_task(_staggered_start(accounts))
     except Exception as e:
         print(f"[System] Hesap başlatma hatası: {e}")
-    finally:
-        db.close()
 
 
     yield  # Uygulama burada çalışır
@@ -201,180 +203,202 @@ def _reactions_to_str(reactions_results) -> str:
     return "|".join(sorted(parts))
 
 
-async def reaction_poll_loop(client: TelegramClient, account: Account, interval: int = 15):
+async def reaction_poll_loop(client: TelegramClient, account: Account, interval: int = 20):
     """
-    Her `interval` saniyede bir kaynak mesajların reaksiyonlarını çek,
-    değişen reaksiyonları hedefe ilet.
-    Tek bir DB session kullanır — concurrent lock hatasını önler.
+    Her `interval` saniyede bir kaynak mesajların reaksiyonlarını çeker,
+    değişen reaksiyonları hedefe iletir.
+    Ağ çağrıları sırasında asla DB bağlantısı tutmaz — QueuePool tükenmesini önler.
     """
+    # Hesap ID'sine göre başlangıca ufak jitter ekle
+    await asyncio.sleep(15 + (account.id % 20))
     print(f"[{account.name}] 🔄 Reaksiyon polling başladı ({interval}s aralık)")
-    await asyncio.sleep(12)  # Backfill tamamlansın
 
     while True:
         if not client.is_connected():
-            print(f"[{account.name}] ❌ [POLL] Client disconnected. Bağlantı bekleniyor...")
             await asyncio.sleep(15)
             continue
-            
+
         try:
-            db = SessionLocal()
-            try:
+            # 1. Hızlıca aktif kuralları al ve DB'yi HEMEN KAPAT
+            rules_data = []
+            with SessionLocal() as db:
                 rules = db.query(Rule).filter(
                     Rule.account_id == account.id,
                     Rule.is_active == True
                 ).all()
+                for r in rules:
+                    rules_data.append({
+                        "source_chat_id": r.source_chat_id,
+                        "destination_id": r.destination_id,
+                        "sender_id": r.sender_id
+                    })
 
-                for rule in rules:
-                    try:
-                        src_msgs = await client.get_messages(int(rule.source_chat_id), limit=50)
+            if not rules_data:
+                await asyncio.sleep(interval)
+                continue
 
-                        for msg in src_msgs:
-                            if not msg:
-                                continue
-                            if rule.sender_id and str(getattr(msg, 'sender_id', '')) != rule.sender_id:
-                                continue
-                            if not msg.reactions or not msg.reactions.results:
-                                continue
+            # 2. Ağ çağrılarını DB KAPALIYKEN yap
+            for r in rules_data:
+                src_chat = r["source_chat_id"]
+                dst_chat = r["destination_id"]
+                sid_filter = r["sender_id"]
 
-                            current_str = _reactions_to_str(msg.reactions.results)
-                            if not current_str:
-                                continue
+                try:
+                    src_msgs = await client.get_messages(int(src_chat), limit=30)
+                    if not src_msgs:
+                        continue
 
-                            mapping = db.query(MessageMapping).filter(
-                                MessageMapping.account_id          == account.id,
-                                MessageMapping.original_chat_id    == rule.source_chat_id,
-                                MessageMapping.original_msg_id     == msg.id,
-                                MessageMapping.destination_chat_id == rule.destination_id
-                            ).first()
+                    # Sadece reaksiyonu olan mesajlar
+                    reacted_msgs = [
+                        m for m in src_msgs
+                        if m and getattr(m, 'reactions', None) and getattr(m.reactions, 'results', None)
+                        and (not sid_filter or str(getattr(m, 'sender_id', '')) == sid_filter)
+                    ]
+                    if not reacted_msgs:
+                        continue
 
-                            if not mapping:
-                                # Backfill için geçici olarak bu session'ı kapat
-                                db.close()
-                                db = SessionLocal()
-                                await backfill_mappings(client, account, limit=100)
-                                mapping = db.query(MessageMapping).filter(
-                                    MessageMapping.account_id          == account.id,
-                                    MessageMapping.original_chat_id    == rule.source_chat_id,
-                                    MessageMapping.original_msg_id     == msg.id,
-                                    MessageMapping.destination_chat_id == rule.destination_id
-                                ).first()
+                    # Bu mesajların mapping'lerini tek hızlı sorguda çek ve DB'yi kapat
+                    msg_ids = [m.id for m in reacted_msgs]
+                    mappings_dict = {}
+                    with SessionLocal() as db:
+                        maps = db.query(MessageMapping).filter(
+                            MessageMapping.account_id == account.id,
+                            MessageMapping.original_chat_id == src_chat,
+                            MessageMapping.original_msg_id.in_(msg_ids),
+                            MessageMapping.destination_chat_id == dst_chat
+                        ).all()
+                        for mp in maps:
+                            mappings_dict[mp.original_msg_id] = (mp.id, mp.forwarded_msg_id, mp.last_reactions)
 
-                            if not mapping:
-                                continue
+                    # Değişen reaksiyonları ilet
+                    for msg in reacted_msgs:
+                        current_str = _reactions_to_str(msg.reactions.results)
+                        if not current_str:
+                            continue
 
-                            if (mapping.last_reactions or "") == current_str:
-                                continue
+                        map_info = mappings_dict.get(msg.id)
+                        if not map_info:
+                            continue
 
-                            new_reactions = [r.reaction for r in msg.reactions.results]
-                            try:
-                                await client(functions.messages.SendReactionRequest(
-                                    peer=int(rule.destination_id),
-                                    msg_id=mapping.forwarded_msg_id,
-                                    reaction=new_reactions,
-                                    add_to_recent=True
-                                ))
-                                mapping.last_reactions = current_str
-                                db.commit()
-                                print(f"[{account.name}] ✅ [POLL] Reaksiyon iletildi "
-                                      f"src={msg.id} → dst={mapping.forwarded_msg_id} | {current_str}")
-                            except Exception as e:
-                                print(f"[{account.name}] ❌ [POLL] Reaksiyon gönderme hatası: {e}")
+                        map_db_id, fwd_msg_id, last_react = map_info
+                        if (last_react or "") == current_str:
+                            continue
 
-                    except Exception as e:
-                        print(f"[{account.name}] ❌ [POLL] Rule hatası: {e}")
-            finally:
-                db.close()
+                        new_reactions = [rx.reaction for rx in msg.reactions.results]
+                        try:
+                            await client(functions.messages.SendReactionRequest(
+                                peer=int(dst_chat),
+                                msg_id=fwd_msg_id,
+                                reaction=new_reactions,
+                                add_to_recent=True
+                            ))
+                            # Başarılıysa DB'ye tek satır yaz ve HEMEN kapat
+                            with SessionLocal() as db:
+                                row = db.query(MessageMapping).filter(MessageMapping.id == map_db_id).first()
+                                if row:
+                                    row.last_reactions = current_str
+                                    db.commit()
+                            print(f"[{account.name}] ✅ [POLL] Reaksiyon iletildi src={msg.id} → dst={fwd_msg_id} | {current_str}")
+                        except Exception as e:
+                            print(f"[{account.name}] ❌ [POLL] Reaksiyon gönderme hatası: {e}")
+
+                except Exception as e:
+                    print(f"[{account.name}] ❌ [POLL] Rule hatası ({src_chat}): {e}")
 
         except Exception as e:
             print(f"[{account.name}] ❌ [POLL] Genel hata: {e}")
 
-        await asyncio.sleep(interval)
+        # Her döngüde hesap bazlı jitter ile bekle
+        await asyncio.sleep(interval + (account.id % 5))
 
 
-async def backfill_mappings(client: TelegramClient, account: Account, limit: int = 200):
+async def backfill_mappings(client: TelegramClient, account: Account, limit: int = 100):
     """
     Her rule için kaynak kanaldaki son `limit` mesajı çeker.
-    Hedef kanaldaki mesajlarla timestamp benzerliğine göre eşleştirir
-    ve MessageMapping tablosuna yazar.
+    Ağ çağrıları sırasında DB bağlantısı tutulmaz.
     """
-    db = SessionLocal()
     try:
-        rules = db.query(Rule).filter(
-            Rule.account_id == account.id,
-            Rule.is_active == True
-        ).all()
+        rules_data = []
+        with SessionLocal() as db:
+            rules = db.query(Rule).filter(
+                Rule.account_id == account.id,
+                Rule.is_active == True
+            ).all()
+            for r in rules:
+                rules_data.append((r.source_chat_id, r.destination_id, r.sender_id))
 
-        for rule in rules:
-            src_id = rule.source_chat_id
-            dst_id = rule.destination_id
-            print(f"[{account.name}] Backfill başlıyor: {src_id} → {dst_id}")
+        if not rules_data:
+            return
 
+        for src_id, dst_id, sender_id in rules_data:
             try:
-                # Kaynak ve hedef mesajları çek
+                # Kaynak ve hedef mesajları çek (DB KAPALI)
                 src_msgs = await client.get_messages(int(src_id), limit=limit)
                 dst_msgs = await client.get_messages(int(dst_id), limit=limit)
 
-                # Hedef mesajları hızlı arama için index'le
-                # (metin[:60], dakika) → dst_msg_id
+                if not src_msgs or not dst_msgs:
+                    continue
+
                 dst_index = {}
                 for dm in dst_msgs:
                     if not dm:
                         continue
                     key_text = (dm.message or "")[:60]
                     key_ts   = round(dm.date.timestamp() / 60)
-                    dst_index[(key_text, key_ts)]    = dm.id
-                    dst_index[("__any__",  key_ts)]  = dm.id  # sadece timestamp
+                    dst_index[(key_text, key_ts)]   = dm.id
+                    dst_index[("__any__", key_ts)] = dm.id
 
-                mapped_count = 0
+                # Mevcut mapping'leri çek
+                src_ids = [sm.id for sm in src_msgs if sm]
+                with SessionLocal() as db:
+                    existing_mapped = set(
+                        row[0] for row in db.query(MessageMapping.original_msg_id).filter(
+                            MessageMapping.account_id == account.id,
+                            MessageMapping.original_chat_id == src_id,
+                            MessageMapping.destination_chat_id == dst_id,
+                            MessageMapping.original_msg_id.in_(src_ids)
+                        ).all()
+                    )
+
+                new_mappings = []
                 for sm in src_msgs:
-                    if not sm:
+                    if not sm or sm.id in existing_mapped:
                         continue
-                    # Sadece belirli göndericiden mi filtre var?
-                    if rule.sender_id and str(getattr(sm, 'sender_id', '')) != rule.sender_id:
-                        continue
-
-                    # Zaten mapping var mı?
-                    exists = db.query(MessageMapping).filter(
-                        MessageMapping.original_chat_id == src_id,
-                        MessageMapping.original_msg_id  == sm.id,
-                        MessageMapping.destination_chat_id == dst_id
-                    ).first()
-                    if exists:
+                    if sender_id and str(getattr(sm, 'sender_id', '')) != sender_id:
                         continue
 
                     key_text = (sm.message or "")[:60]
                     key_ts   = round(sm.date.timestamp() / 60)
 
-                    # Önce metin+timestamp eşleştir
                     forwarded_id = dst_index.get((key_text, key_ts))
-                    # Sonra ±1 dakika tolerans
                     if not forwarded_id:
                         forwarded_id = (dst_index.get((key_text, key_ts + 1))
                                      or dst_index.get((key_text, key_ts - 1)))
-                    # Son çare: sadece timestamp (medya mesajlar)
                     if not forwarded_id:
                         forwarded_id = (dst_index.get(("__any__", key_ts))
                                      or dst_index.get(("__any__", key_ts + 1))
                                      or dst_index.get(("__any__", key_ts - 1)))
 
                     if forwarded_id:
-                        new_map = MessageMapping(
+                        new_mappings.append(MessageMapping(
                             account_id          = account.id,
                             original_chat_id    = src_id,
                             original_msg_id     = sm.id,
                             destination_chat_id = dst_id,
                             forwarded_msg_id    = forwarded_id
-                        )
-                        db.add(new_map)
-                        mapped_count += 1
+                        ))
 
-                db.commit()
-                print(f"[{account.name}] Backfill tamamlandı: {src_id} → {dst_id} | {mapped_count} mesaj eşleştirildi")
+                if new_mappings:
+                    with SessionLocal() as db:
+                        db.add_all(new_mappings)
+                        db.commit()
+                    print(f"[{account.name}] Backfill tamamlandı: {src_id} → {dst_id} | {len(new_mappings)} mesaj eşleştirildi")
 
             except Exception as e:
                 print(f"[{account.name}] Backfill hatası ({src_id} → {dst_id}): {e}")
-    finally:
-        db.close()
+
+    except Exception as e:
+        print(f"[{account.name}] Backfill genel hata: {e}")
 
 
 async def start_client(account: Account, _existing_client: TelegramClient = None):
@@ -400,10 +424,18 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
         print(f"[{account.name}] Mevcut bağlantı kullanılıyor (yeni giriş).")
     else:
         print(f"[{account.name}] Başlatılıyor...")
-        client = TelegramClient(account.session_file, int(account.api_id), account.api_hash)
+        client = TelegramClient(
+            account.session_file,
+            int(account.api_id),
+            account.api_hash,
+            connection_retries=3,
+            retry_delay=5,
+            timeout=25,
+            auto_reconnect=True
+        )
 
         try:
-            await asyncio.wait_for(client.connect(), timeout=30)
+            await asyncio.wait_for(client.connect(), timeout=35)
         except asyncio.TimeoutError:
             print(f"[{account.name}] Bağlantı zaman aşıldı.")
             return
@@ -412,7 +444,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             return
 
         try:
-            authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
+            authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=20)
         except asyncio.TimeoutError:
             print(f"[{account.name}] Yetkilendirme kontrolü zaman aşıldı.")
             await client.disconnect()
@@ -430,10 +462,13 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
     clients[account.id] = client
     print(f"[{account.name}] Aktif.")
 
-    # ── Geçmiş mesajları eşleştir (reaksiyon iletimi için) ──
-    asyncio.create_task(backfill_mappings(client, account))
-    # ── Reaksiyon polling — event gelmese de her 15s'de kontrol eder ──
-    asyncio.create_task(reaction_poll_loop(client, account, interval=15))
+    # ── Geçmiş mesajları eşleştir (reaksiyon iletimi için — kademeli başlat) ──
+    async def _delayed_backfill():
+        await asyncio.sleep(60 + (account.id % 90))
+        await backfill_mappings(client, account)
+
+    asyncio.create_task(_delayed_backfill())
+    asyncio.create_task(reaction_poll_loop(client, account, interval=20))
 
     @client.on(events.NewMessage)
     async def message_handler(event):
