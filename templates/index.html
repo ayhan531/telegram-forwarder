@@ -376,16 +376,20 @@
                     <div class="flex items-center gap-2 mb-1" style="font-size:.75rem">
                       <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.search_word }}</code>
                       <span class="text-muted">→</span>
-                      <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.replace_word or '(sil)' }}</code>
+                      {% if f.replace_word %}
+                        <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px;color:#a5b4fc">{{ f.replace_word }}</code>
+                      {% else %}
+                        <span style="background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.35);padding:.1rem .4rem;border-radius:4px;font-weight:700">🚫 Mesajı Engelle</span>
+                      {% endif %}
                       <form action="/filters/{{ f.id }}/delete" method="POST" style="margin-left:auto">
                         <button type="submit" class="btn-danger" style="padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer">✕</button>
                       </form>
                     </div>
                     {% endfor %}
                     <form action="/rules/{{ rule.id }}/filters" method="POST" class="flex gap-2 mt-2">
-                      <input type="text" name="search_word" placeholder="Bul" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
-                      <input type="text" name="replace_word" placeholder="Değiştir (boş=sil)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
-                      <button type="submit" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
+                      <input type="text" name="search_word" placeholder="Kelime (örn: HEDEF)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
+                      <input type="text" name="replace_word" placeholder="Değiştir (boş = mesajı engelle)" title="Boş bırakırsanız bu kelimeyi içeren mesajlar direkt engellenir ve iletilmez" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
+                      <button type="submit" title="Filtre Ekle" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
                     </form>
                     {% if rule.filters %}
                     <button onclick="openFilterCopy({{ rule.id }})"

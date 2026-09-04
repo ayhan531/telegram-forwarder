@@ -617,30 +617,41 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             except Exception:
                                 pass
 
-                # ── Kelime filtresi uygula ──
+                # ── 1. Yasaklı kelime filtreleri (Mesajı engelle) ──
+                # replace_word boş bırakılmışsa bu bir ENGELLEME filtresidir.
+                # Mesajda bu kelime geçiyorsa mesaj HİÇ İLETİLMEZ (engellenir).
                 raw_message_text = event.message.message or ""
+                
+                blocked_word = None
+                for f in rule.filters:
+                    replace_val = (f.replace_word or "").strip()
+                    if not replace_val or replace_val.lower() in ('[engelle]', 'engelle', '(engelle)'):
+                        search = f.search_word.strip()
+                        if not search:
+                            continue
+                        is_word = all(c in TURK_LETTERS for c in search)
+                        pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])' if is_word else re.escape(search)
+                        if re.search(pattern, raw_message_text, re.IGNORECASE):
+                            blocked_word = search
+                            break
+
+                if blocked_word:
+                    print(f"[{account.name}] 🚫 Yasaklı kelime tespit edildi ('{blocked_word}'), mesaj iletilmedi (msg={event.id})")
+                    continue
+
+                # ── 2. Kelime değiştirme filtreleri (Bul -> Değiştir) ──
                 caption = raw_message_text
-
-                # Filtreleri aranan kelime uzunluğuna göre sırala (böylece abiii, abi'den önce çalışır)
-                sorted_filters = sorted(rule.filters, key=lambda x: len(getattr(x, 'search_word', '')), reverse=True)
-                for f in sorted_filters:
-                    search = f.search_word
-                    replace_str = f.replace_word if f.replace_word else ""
-                    if not search:
-                        continue
-
-                    # Sadece harf ve rakamdan oluşuyorsa kelime sınırı uygula (tabi -> tabla olmasını önler)
-                    is_word = all(c in TURK_LETTERS for c in search)
-                    if is_word:
-                        pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])'
-                    else:
-                        pattern = re.escape(search)
-
-                    if not replace_str:
-                        # Silme işleminde büyük/küçük harf duyarsız sil (HEDEF, Hedef, hedef)
-                        caption = re.sub(pattern, '', caption, flags=re.IGNORECASE)
-                    else:
-                        # Değiştirme işleminde birebir eşleşme
+                replacement_filters = [
+                    f for f in rule.filters
+                    if (f.replace_word or "").strip() and (f.replace_word or "").strip().lower() not in ('[engelle]', 'engelle', '(engelle)')
+                ]
+                if replacement_filters:
+                    sorted_filters = sorted(replacement_filters, key=lambda x: len(getattr(x, 'search_word', '')), reverse=True)
+                    for f in sorted_filters:
+                        search = f.search_word
+                        replace_str = "" if f.replace_word in ('(sil)', '<sil>') else f.replace_word
+                        is_word = all(c in TURK_LETTERS for c in search)
+                        pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])' if is_word else re.escape(search)
                         caption = re.sub(pattern, replace_str, caption)
 
                 # Eğer sahte alıntı varsa mesajın başına ekle
@@ -656,21 +667,12 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                     caption = _URL_RE.sub(rule.replace_link, caption)
                     print(f"[{account.name}] 🔗 Link degistirildi → {rule.replace_link} (msg={event.id})")
 
-                # Metin herhangi bir filtre, link değişimi veya alıntı ile DEĞİŞTİRİLDİ Mİ?
-                is_text_modified = (caption != raw_message_text)
-
                 try:
                     sent_msg = None
-
-                    # ── Kanalı / Grubu mesaj içerisinde belirt (Şuradan iletildi başlığı) ──
                     dest_peer = int(rule.destination_id) if rule.destination_id.lstrip('-').isdigit() else rule.destination_id
-                    
-                    # ÖNEMLİ: Eğer metin bir filtre ile değiştirildiyse (örn: HEDEF silindiyse veya abi->abla olduysa),
-                    # Telegram native forward KULLANILAMAZ. Çünkü native forward orijinal kanaldaki filtrelenmemiş
-                    # mesajı aynen yollar. Bu yüzden metin değişmişse filtrelenmiş metin kopya olarak gönderilir,
-                    # ve show_forward_header açıksa başa 'Şuradan iletildi: Kaynak' eklenir.
-                    # Metin hiç değişmediyse ve show_forward_header açıksa, Telegram'ın native forward'ı kullanılır.
-                    if getattr(rule, 'show_forward_header', False) and not is_text_modified:
+
+                    # ── Kanalı / Grubu mesaj içerisinde belirt (Orijinal Telegram forward mesajı) ──
+                    if getattr(rule, 'show_forward_header', False):
                         try:
                             input_chat = await event.get_input_chat()
                             fwd_res = await client.forward_messages(
@@ -684,16 +686,9 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         except Exception as fwd_e:
                             print(f"[{account.name}] ⚠️ Native forward yapılamadı ({fwd_e}), kopya ile gönderiliyor...")
 
-                    # Eğer show_forward_header kapalıysa VEYA metin filtrelendiyse VEYA native forward başarısız olduysa kopya olarak ilet:
+                    # Eğer show_forward_header kapalıysa VEYA native forward başarısız olduysa kopya olarak ilet:
                     if not sent_msg:
                         caption_to_send = caption
-                        if getattr(rule, 'show_forward_header', False):
-                            # Korumalı kanalda native forward engelli olduğunda metin başına kaynak ekle
-                            src_title = getattr(event.chat, 'title', None) or getattr(event.chat, 'first_name', None) or "Kaynak Kanal"
-                            src_user = getattr(event.chat, 'username', None)
-                            src_info = f"{src_title} (@{src_user})" if src_user else src_title
-                            header_line = f"📢 Şuradan iletildi: {src_info}"
-                            caption_to_send = f"{header_line}\n\n{caption}" if caption else header_line
                         media = event.message.media
 
                         if media:
