@@ -300,7 +300,15 @@ async def reaction_poll_loop(client: TelegramClient, account: Account, interval:
                                     db.commit()
                             print(f"[{account.name}] ✅ [POLL] Reaksiyon iletildi src={msg.id} → dst={fwd_msg_id} | {current_str}")
                         except Exception as e:
-                            print(f"[{account.name}] ❌ [POLL] Reaksiyon gönderme hatası: {e}")
+                            err_str = str(e).lower()
+                            if "reactions_uniq_max" in err_str or "reaction_invalid" in err_str or "reactions_too_many" in err_str:
+                                with SessionLocal() as db:
+                                    row = db.query(MessageMapping).filter(MessageMapping.id == map_db_id).first()
+                                    if row:
+                                        row.last_reactions = current_str
+                                        db.commit()
+                            else:
+                                print(f"[{account.name}] ❌ [POLL] Reaksiyon gönderme hatası: {e}")
 
                 except Exception as e:
                     print(f"[{account.name}] ❌ [POLL] Rule hatası ({src_chat}): {e}")
