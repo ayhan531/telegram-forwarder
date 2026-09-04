@@ -637,11 +637,14 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                     sent_msg = None
 
                     # ── Kanalı / Grubu mesaj içerisinde belirt (Şuradan iletildi başlığı) ──
+                    dest_peer = int(rule.destination_id) if rule.destination_id.lstrip('-').isdigit() else rule.destination_id
                     if getattr(rule, 'show_forward_header', False):
                         try:
+                            input_chat = await event.get_input_chat()
                             fwd_res = await client.forward_messages(
-                                int(rule.destination_id),
-                                event.message
+                                entity=dest_peer,
+                                messages=event.message,
+                                from_peer=input_chat
                             )
                             if fwd_res:
                                 sent_msg = fwd_res[0] if isinstance(fwd_res, list) else fwd_res
@@ -649,8 +652,16 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         except Exception as fwd_e:
                             print(f"[{account.name}] ⚠️ Native forward yapılamadı ({fwd_e}), kopya ile gönderiliyor...")
 
-                    # Eğer show_forward_header kapalıysa veya native forward başarısız olduysa kopya olarak ilet:
+                    # Eğer show_forward_header kapalıysa veya native forward başarısız olduysa (örn. korumalı kanal) kopya olarak ilet:
                     if not sent_msg:
+                        caption_to_send = caption
+                        if getattr(rule, 'show_forward_header', False):
+                            # Korumalı kanalda native forward engelli olduğunda metin başına kaynak ekle
+                            src_title = getattr(event.chat, 'title', None) or getattr(event.chat, 'first_name', None) or "Kaynak Kanal"
+                            src_user = getattr(event.chat, 'username', None)
+                            src_info = f"{src_title} (@{src_user})" if src_user else src_title
+                            header_line = f"📢 Şuradan iletildi: {src_info}"
+                            caption_to_send = f"{header_line}\n\n{caption}" if caption else header_line
                         media = event.message.media
 
                         if media:
@@ -692,15 +703,15 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 video_note=is_video_note,
                             )
                             if not is_voice and not is_video_note and not is_sticker:
-                                send_kwargs["caption"] = caption
+                                send_kwargs["caption"] = caption_to_send
 
                             sent_msg = await client.send_file(**send_kwargs)
 
                         else:
-                            if caption:
+                            if caption_to_send:
                                 sent_msg = await client.send_message(
-                                    int(rule.destination_id),
-                                    message=caption,
+                                    dest_peer,
+                                    message=caption_to_send,
                                     reply_to=reply_to_msg_id
                                 )
 

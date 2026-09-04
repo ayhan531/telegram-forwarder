@@ -145,10 +145,20 @@
         <span>Her satır = bir kural. <b>Hesap</b> seç, <b>Kişi ID</b>'yi gir (boş bırakırsan o hesap gruptaki herkesi dinler).</span>
       </div>
 
-      <div style="margin-bottom:1rem; padding:.8rem 1rem; background:rgba(99,102,241,.08); border:1px solid rgba(99,102,241,.25); border-radius:8px">
-        <label style="display:flex; align-items:center; gap:.7rem; cursor:pointer; font-size:.85rem; color:#e2e8f0; font-weight:600">
-          <input type="checkbox" id="bulk_show_forward_header" style="width:18px; height:18px; accent-color:#6366f1; cursor:pointer">
-          <span>📢 <b>Kanalı veya grubu mesaj içerisinde belirt</b> <span style="font-size:.78rem; color:var(--muted); font-weight:400">(İşaretlenirse mesajın başında <b>Şuradan iletildi: Kaynak Kanal</b> başlığı görünür)</span></span>
+      <div style="margin-bottom:1rem">
+        <label class="custom-toggle-card" id="lbl_bulk_show_forward_header">
+          <input type="checkbox" id="bulk_show_forward_header" style="display:none;" onchange="this.closest('.custom-toggle-card').classList.toggle('checked', this.checked)">
+          <div class="custom-toggle-track">
+            <div class="custom-toggle-thumb"></div>
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:600; font-size:.88rem; color:#e2e8f0; display:flex; align-items:center; gap:.4rem">
+              <span>📢</span> Kanalı veya grubu mesaj içerisinde belirtmek istiyor musunuz?
+            </div>
+            <div style="font-size:.78rem; color:#94a3b8; font-weight:400; margin-top:.2rem">
+              (İşaretlenirse iletilen mesajın başında Telegram'ın orijinal <b>Şuradan iletildi: Kaynak Kanal</b> başlığı yer alır)
+            </div>
+          </div>
         </label>
       </div>
 

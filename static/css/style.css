@@ -112,7 +112,7 @@ body {
   display: block; font-size: .8rem; font-weight: 500;
   color: var(--muted2); margin-bottom: .4rem;
 }
-.field input, .field select, .field textarea {
+.field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -124,12 +124,85 @@ body {
   transition: border-color .2s, box-shadow .2s;
   appearance: none;
 }
-.field input:focus, .field select:focus {
+.field input:not([type="checkbox"]):not([type="radio"]):focus, .field select:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(91,141,239,.15);
 }
-.field input::placeholder { color: var(--muted); }
+.field input:not([type="checkbox"]):not([type="radio"])::placeholder { color: var(--muted); }
 .field-hint { font-size: .75rem; color: var(--muted); margin-top: .35rem; }
+
+/* ─── CUSTOM TOGGLE SWITCH CARD ─── */
+.custom-toggle-card {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+  cursor: pointer;
+  background: var(--surface2);
+  padding: .85rem 1.1rem;
+  border-radius: 12px;
+  border: 1.5px solid rgba(99, 102, 241, 0.3);
+  transition: all .2s ease;
+  user-select: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.custom-toggle-card:hover {
+  border-color: rgba(99, 102, 241, 0.65);
+  background: rgba(99, 102, 241, 0.06);
+}
+.custom-toggle-card.checked,
+.custom-toggle-card:has(input:checked) {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.16);
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.22);
+}
+.custom-toggle-track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: #334155;
+  border-radius: 9999px;
+  transition: background .22s ease;
+  flex-shrink: 0;
+}
+.custom-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform .22s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.35);
+}
+.custom-toggle-card.checked .custom-toggle-track,
+.custom-toggle-card:has(input:checked) .custom-toggle-track {
+  background: #6366f1;
+}
+.custom-toggle-card.checked .custom-toggle-thumb,
+.custom-toggle-card:has(input:checked) .custom-toggle-thumb {
+  transform: translateX(20px);
+}
+
+/* Gold variant for Hükümdar */
+.custom-toggle-card.gold-toggle {
+  border-color: rgba(212, 160, 23, 0.3);
+}
+.custom-toggle-card.gold-toggle:hover {
+  border-color: rgba(212, 160, 23, 0.7);
+  background: rgba(212, 160, 23, 0.08);
+}
+.custom-toggle-card.gold-toggle.checked,
+.custom-toggle-card.gold-toggle:has(input:checked) {
+  border-color: #d4a017;
+  background: rgba(212, 160, 23, 0.16);
+  box-shadow: 0 0 16px rgba(212, 160, 23, 0.25);
+}
+.custom-toggle-card.gold-toggle.checked .custom-toggle-track,
+.custom-toggle-card.gold-toggle:has(input:checked) .custom-toggle-track {
+  background: #d4a017;
+}
 
 /* ─── BUTTONS ────────────────────────────────────────── */
 .btn {

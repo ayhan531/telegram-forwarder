@@ -750,9 +750,15 @@
       </div>
 
       <div>
-        <label style="font-size:.82rem; display:flex; align-items:center; gap:.6rem; color:#e2e8f0; cursor:pointer; background:var(--surface2); padding:.6rem .8rem; border-radius:8px; border:1px solid var(--gold-border)">
-          <input type="checkbox" name="show_forward_header" id="edit_rule_show_forward_header" value="true" style="width:16px; height:16px; accent-color:var(--gold)">
-          📢 <b>Kanalı/Grubu mesajda belirt</b> (Şuradan iletildi başlığı)
+        <label class="custom-toggle-card gold-toggle" id="lbl_h_edit_rule_show_forward_header" style="padding:.65rem .9rem; border-radius:10px">
+          <input type="checkbox" name="show_forward_header" id="edit_rule_show_forward_header" value="true" style="display:none;" onchange="this.closest('.custom-toggle-card').classList.toggle('checked', this.checked)">
+          <div class="custom-toggle-track">
+            <div class="custom-toggle-thumb"></div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:.82rem; font-weight:600; color:#e2e8f0">📢 Kanalı/Grubu mesajda belirt</div>
+            <div style="font-size:.72rem; color:#94a3b8">Şuradan iletildi başlığıyla orijinal kaynak linki</div>
+          </div>
         </label>
       </div>
 
@@ -895,7 +901,11 @@ function openEditRuleModal(ruleId, source, dest, sender, senderName, desc, accId
   document.getElementById('edit_rule_account_id').value = accId;
   document.getElementById('edit_rule_block_links').checked = blockLinks;
   document.getElementById('edit_rule_replace_link').value = replaceLink;
-  document.getElementById('edit_rule_show_forward_header').checked = Boolean(showForwardHeader);
+  const fwdEl = document.getElementById('edit_rule_show_forward_header');
+  if (fwdEl) {
+    fwdEl.checked = Boolean(showForwardHeader);
+    fwdEl.closest('.custom-toggle-card')?.classList.toggle('checked', Boolean(showForwardHeader));
+  }
   openModal('modalEditRule');
 }
 
