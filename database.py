@@ -1,5 +1,6 @@
 import os
 import hashlib
+import datetime
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -136,6 +137,41 @@ class IgnoredMember(Base):
     identifier = Column(String, unique=True, index=True)  # user_id, phone veya @username
     note       = Column(String, nullable=True)
     created_at = Column(String)
+
+
+class TrackedGroup(Base):
+    __tablename__ = "tracked_groups"
+    id              = Column(Integer, primary_key=True, index=True)
+    account_id      = Column(Integer, ForeignKey("accounts.id"), nullable=True)
+    custom_title    = Column(String, nullable=True)     # Kullanıcının verdiği özel isim
+    telegram_title  = Column(String, nullable=True)     # Telegram'daki gerçek grup adı
+    chat_id         = Column(String, index=True)        # -100... ID veya username
+    invite_link     = Column(String, nullable=True)     # t.me/+... linki
+    total_members   = Column(Integer, default=0)        # Telegram'ın resmi toplam üye sayısı
+    scanned_members = Column(Integer, default=0)        # Taranabilen üye sayısı
+    last_scanned_at = Column(String, nullable=True)     # Son tarama tarihi
+    created_at      = Column(String, default=lambda: datetime.datetime.utcnow().isoformat())
+
+    account = relationship("Account")
+    members = relationship("TrackedGroupMember", back_populates="group", cascade="all, delete-orphan")
+
+    @property
+    def display_name(self):
+        return self.custom_title or self.telegram_title or self.chat_id or f"Grup #{self.id}"
+
+
+class TrackedGroupMember(Base):
+    __tablename__ = "tracked_group_members"
+    id         = Column(Integer, primary_key=True, index=True)
+    group_id   = Column(Integer, ForeignKey("tracked_groups.id", ondelete="CASCADE"), index=True)
+    user_id    = Column(Integer, index=True)
+    first_name = Column(String, nullable=True)
+    last_name  = Column(String, nullable=True)
+    username   = Column(String, nullable=True, index=True)
+    phone      = Column(String, nullable=True)
+    scanned_at = Column(String, nullable=True)
+
+    group = relationship("TrackedGroup", back_populates="members")
 
 
 def init_db():

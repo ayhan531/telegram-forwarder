@@ -496,99 +496,188 @@
   <!-- TAB 4: GRUP/KANAL ORTAK ÜYE ANALİZİ                               -->
   <!-- ================================================================= -->
   <div id="tab-members" class="tab-pane">
-    <div style="display:grid; grid-template-columns:380px 1fr; gap:1.5rem; align-items:start">
+    <div style="display:grid; grid-template-columns:430px 1fr; gap:1.5rem; align-items:start">
 
-      <!-- SOL KOLON: TARAMA FORMU & FİLTRE LİSTESİ -->
-      <div>
-        <div class="card" style="margin-bottom:1.5rem">
-          <div class="card-title">🔍 İki Grup Arasında Ortak Üye Bul</div>
-          <p style="font-size:.8rem; color:var(--text-muted); margin-top:.2rem">
-            Seçtiğiniz hesap üzerinden Kaynak ve Hedef gruptaki üyeleri karşılaştırıp her iki grupta da olan ortak kişileri bulur.
+      <!-- SOL KOLON: GRUP EKLE, KAYITLI GRUPLAR & FİLTRELER -->
+      <div style="display:flex; flex-direction:column; gap:1.2rem">
+
+        <!-- 1. YENİ GRUP EKLE & TARA KARTI -->
+        <div class="card" style="border-color:var(--gold-border); background:linear-gradient(180deg, var(--gold-surface) 0%, var(--surface) 100%)">
+          <div class="card-title" style="color:var(--gold); display:flex; justify-content:space-between; align-items:center">
+            <span>➕ Yeni Grubu Takibe Al & Tara</span>
+            <span style="font-size:.75rem; font-weight:normal; color:var(--text-muted)">Kalıcı Kayıt</span>
+          </div>
+          <p style="font-size:.78rem; color:var(--text-muted); margin-top:.3rem">
+            Eklediğiniz gruplar veritabanında saklanır, sayfa yenilense de kaybolmaz ve sınırsız sayıda grup eklenebilir.
           </p>
 
-          <form id="inspectForm" onsubmit="runMemberInspection(event)" style="display:flex; flex-direction:column; gap:.8rem; margin-top:1rem">
+          <form id="addTrackedGroupForm" onsubmit="submitAddTrackedGroup(event)" style="display:flex; flex-direction:column; gap:.75rem; margin-top:.8rem">
             <div>
-              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Taramayı Yapacak Hesap</label>
-              <select id="inspect_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Taramayı Yapacak Hesap</label>
+              <select id="new_group_account_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
                 <option value="">Hesap seçin...</option>
                 {% for acc in accounts %}
-                <option value="{{ acc.id }}">{{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})</option>
+                <option value="{{ acc.id }}" {% if acc.id in active_client_ids %}style="color:#4ade80"{% endif %}>
+                  {{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }}) {% if acc.id in active_client_ids %}● Aktif{% endif %}
+                </option>
                 {% endfor %}
               </select>
             </div>
 
             <div>
-              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Grup A (Kaynak Grup / Kanal ID veya Link)</label>
-              <input type="text" id="inspect_chat_a" placeholder="-100xxxx veya t.me/grupA" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Grup / Kanal ID veya Davet Linki</label>
+              <input type="text" id="new_group_chat_id" placeholder="-100xxxx veya https://t.me/+PnnwKowKHRNjNzg0" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
             </div>
 
             <div>
-              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Grup B (Hedef Grup / Kanal ID veya Link)</label>
-              <input type="text" id="inspect_chat_b" placeholder="-100yyyy veya t.me/grupB" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.6rem; border-radius:8px">
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Özel Grup Adı <span style="color:var(--text-muted); font-weight:normal">(Opsiyonel - Boşsa Telegram adı alınır)</span></label>
+              <input type="text" id="new_group_custom_title" placeholder="Örn: Ana VIP, Yedek VIP, Sohbet Grubu" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
             </div>
 
-            <button type="submit" id="inspectSubmitBtn" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px; margin-top:.4rem">
-              🔎 Ortak Üyeleri Tara
+            <button type="submit" id="addTrackedGroupBtn" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.65rem; border-radius:8px; font-size:.85rem; margin-top:.2rem">
+              💾 Grubu Kaydet & Hemen Tara
             </button>
           </form>
         </div>
 
-        <!-- YOK SAYILAN / FİLTRELENEN HESAPLAR -->
+        <!-- 2. TAKİP EDİLEN GRUPLAR (KALICI LİSTE) -->
         <div class="card">
-          <div class="card-title">🚫 Gösterilmeyecek Hesaplar (Filtre)</div>
-          <p style="font-size:.78rem; color:var(--text-muted); margin-top:.2rem">
-            Her iki grupta da olan ancak listede görünmesini istemediğiniz kendi admin veya bot hesaplarınızın ID veya telefonlarını buraya ekleyin.
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.5rem">
+            <span>📋 Takip Edilen Gruplar (<span id="trackedGroupCountBadge">{{ tracked_groups|length }}</span>)</span>
+            <button type="button" class="act-btn act-btn-gold" onclick="scanAllTrackedGroups()" title="Tüm grupları sırayla yeniden tara" id="btnScanAll">
+              🔄 Tümünü Güncelle
+            </button>
+          </div>
+          <p style="font-size:.76rem; color:var(--text-muted); margin-top:.2rem">
+            Kıyaslamak istediğiniz grupları işaretleyin ve "Seçilenleri Karşılaştır" butonuna basın.
           </p>
 
-          <form action="/ignored-members/add" method="POST" style="display:flex; gap:.4rem; margin-top:.8rem">
-            <input type="text" name="identifier" placeholder="ID veya Telefon (+905...)" required style="flex:1; background:var(--surface2); border:1px solid var(--border); color:white; padding:.5rem .7rem; border-radius:6px; font-size:.82rem">
-            <button type="submit" class="act-btn act-btn-gold" style="padding:.5rem .8rem">+ Ekle</button>
-          </form>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:.8rem; padding-bottom:.5rem; border-bottom:1px solid var(--border); font-size:.78rem">
+            <label style="display:flex; align-items:center; gap:.4rem; cursor:pointer; color:var(--text-muted)">
+              <input type="checkbox" id="chkSelectAllGroups" onchange="toggleSelectAllTrackedGroups(this)" checked>
+              <span>Tümünü Seç / Bırak</span>
+            </label>
+            <button type="button" class="act-btn act-btn-gold" onclick="runTrackedGroupsComparison()" style="font-weight:700">
+              ⚡ Seçilenleri Karşılaştır
+            </button>
+          </div>
 
-          <div style="margin-top:.8rem; max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem">
-            {% for im in ignored_members %}
-            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface2); padding:.35rem .6rem; border-radius:6px; font-size:.78rem">
-              <code>{{ im.identifier }}</code>
-              <form action="/ignored-members/{{ im.id }}/delete" method="POST" style="display:inline">
-                <button type="submit" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:.75rem">✕</button>
-              </form>
+          <!-- Grup Kartları -->
+          <div id="trackedGroupsList" style="margin-top:.8rem; display:flex; flex-direction:column; gap:.6rem; max-height:450px; overflow-y:auto">
+            {% for g in tracked_groups %}
+            <div class="tracked-group-item" id="tg_card_{{ g.id }}" style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:.75rem">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem">
+                <div style="display:flex; align-items:flex-start; gap:.55rem">
+                  <input type="checkbox" class="compare-group-chk" data-group-id="{{ g.id }}" checked onchange="updateSelectedGroupsUI()" style="margin-top:3px">
+                  <div>
+                    <div style="font-weight:700; font-size:.88rem; display:flex; align-items:center; gap:.4rem">
+                      <span id="tg_title_display_{{ g.id }}">{{ g.display_name }}</span>
+                      {% if g.custom_title %}
+                      <span class="badge badge-gold" style="font-size:.65rem; padding:.1rem .35rem">Özel</span>
+                      {% endif %}
+                    </div>
+                    <div style="font-size:.72rem; color:var(--text-muted); margin-top:.1rem">
+                      TG: {{ g.telegram_title or g.chat_id }}
+                    </div>
+                  </div>
+                </div>
+                <div style="display:flex; gap:.25rem">
+                  <button type="button" class="act-btn" onclick="scanSingleTrackedGroup({{ g.id }})" title="Telegram'dan Tekrar Tara">🔄</button>
+                  <button type="button" class="act-btn act-btn-gold" onclick="openRenameGroupModal({{ g.id }}, '{{ g.display_name }}')" title="İsmi Düzenle">✏️</button>
+                  <button type="button" class="act-btn act-btn-danger" onclick="deleteTrackedGroup({{ g.id }}, '{{ g.display_name }}')" title="Takibi Bırak / Sil">🗑️</button>
+                </div>
+              </div>
+
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:.5rem; padding-top:.4rem; border-top:1px solid rgba(255,255,255,.05); font-size:.75rem">
+                <div>
+                  <span style="color:#93c5fd; font-weight:600">👥 Toplam: <b id="tg_total_{{ g.id }}">{{ g.total_members }}</b></span>
+                  <span style="color:var(--text-muted); margin-left:.3rem">(Taranan: <span id="tg_scanned_{{ g.id }}">{{ g.scanned_members }}</span>)</span>
+                </div>
+                <div style="font-size:.7rem; color:var(--text-muted)" id="tg_time_{{ g.id }}">
+                  {{ g.last_scanned_at[11:16] if g.last_scanned_at else 'Taranmadı' }}
+                </div>
+              </div>
             </div>
             {% else %}
-            <div style="font-size:.75rem; color:var(--text-muted); padding:.5rem 0">Henüz filtrelenmiş numara/ID yok.</div>
+            <div id="noTrackedGroupsNotice" style="text-align:center; padding:1.5rem 1rem; color:var(--text-muted); font-size:.82rem">
+              Henüz kayıtlı grup yok. Yukarıdaki formdan ilk grubunuzu ekleyin.
+            </div>
             {% endfor %}
           </div>
         </div>
+
+        <!-- 3. YOK SAYILAN / FİLTRELENEN HESAPLAR -->
+        <div class="card">
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+            <span>🚫 Gösterilmeyecek Hesaplar (Filtre)</span>
+            <span class="badge" style="font-size:.7rem">{{ ignored_members|length }}</span>
+          </div>
+          <p style="font-size:.76rem; color:var(--text-muted); margin-top:.2rem">
+            Buraya eklenen hesaplar <b>hiçbir grupta</b> ortak katılımcı kıyaslamasına sokulmaz (Admin, Bot hesapları vb.).
+          </p>
+
+          <form action="/ignored-members/add" method="POST" style="display:flex; gap:.4rem; margin-top:.7rem">
+            <input type="text" name="identifier" placeholder="ID, @kullanıcı veya Telefon (+905...)" required style="flex:1; background:var(--surface2); border:1px solid var(--border); color:white; padding:.45rem .65rem; border-radius:6px; font-size:.8rem">
+            <button type="submit" class="act-btn act-btn-gold" style="padding:.45rem .75rem">+ Ekle</button>
+          </form>
+
+          <div style="margin-top:.7rem; max-height:180px; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem" id="ignoredMembersList">
+            {% for im in ignored_members %}
+            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface2); padding:.3rem .55rem; border-radius:6px; font-size:.76rem" id="im_row_{{ im.id }}">
+              <code>{{ im.identifier }}</code>
+              <button type="button" onclick="deleteIgnoredMember({{ im.id }})" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:.75rem">✕</button>
+            </div>
+            {% else %}
+            <div style="font-size:.75rem; color:var(--text-muted); padding:.4rem 0">Henüz filtrelenmiş numara/ID yok.</div>
+            {% endfor %}
+          </div>
+        </div>
+
       </div>
 
-      <!-- SAĞ KOLON: TARAMA SONUÇLARI -->
-      <div class="card">
-        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
-          <span>👥 Ortak Katılımcılar Listesi</span>
-          <span id="resultCountBadge" class="badge badge-gold" style="display:none">0 Ortak Üye</span>
-        </div>
-
-        <div id="inspectLoading" style="display:none; text-align:center; padding:3rem 1rem">
-          <div class="spin-icon" style="width:24px; height:24px; border-width:3px; margin-bottom:.5rem"></div>
-          <div style="font-size:.88rem; color:var(--text-muted)">Grup üyeleri taranıyor ve karşılaştırılıyor, lütfen bekleyin...</div>
-        </div>
-
-        <div id="inspectEmptyState" style="text-align:center; padding:3rem 1rem; color:var(--text-muted); font-size:.85rem">
-          Sol taraftaki formu doldurup "Ortak Üyeleri Tara" butonuna bastığınızda iki grupta ortak bulunan kişiler burada listelenecektir.
-        </div>
-
-        <div id="inspectResultsArea" style="display:none; margin-top:1rem">
-          <div style="display:flex; gap:1rem; margin-bottom:1rem; flex-wrap:wrap">
-            <div style="background:var(--surface2); border:1px solid var(--border); padding:.5rem 1rem; border-radius:8px; font-size:.82rem">
-              Grup A Üye Sayısı: <b id="cntGroupA" style="color:#93c5fd">0</b>
-            </div>
-            <div style="background:var(--surface2); border:1px solid var(--border); padding:.5rem 1rem; border-radius:8px; font-size:.82rem">
-              Grup B Üye Sayısı: <b id="cntGroupB" style="color:#c4b5fd">0</b>
-            </div>
-            <div style="background:var(--gold-surface); border:1px solid var(--gold-border); padding:.5rem 1rem; border-radius:8px; font-size:.82rem">
-              Ortak Üyeler: <b id="cntCommon" style="color:var(--gold)">0</b>
-            </div>
+      <!-- SAĞ KOLON: ÇOKLU GRUP ORTAK KATILIMCI ANALİZİ -->
+      <div class="card" style="min-height:600px">
+        <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.6rem">
+          <div style="display:flex; align-items:center; gap:.5rem">
+            <span>👥 Ortak Katılımcılar Analizi</span>
+            <span id="resultCountBadge" class="badge badge-gold" style="display:none; font-size:.8rem">0 Ortak Üye</span>
           </div>
+          <div style="display:flex; align-items:center; gap:.5rem">
+            <select id="filterMinCommon" onchange="runTrackedGroupsComparison()" style="background:var(--surface2); border:1px solid var(--border); color:white; padding:.4rem .6rem; border-radius:6px; font-size:.78rem">
+              <option value="2">En az 2 grupta ortak olanlar</option>
+              <option value="3">En az 3 grupta ortak olanlar</option>
+              <option value="all">Tüm seçili gruplarda ortak olanlar</option>
+            </select>
+            <button type="button" class="act-btn act-btn-gold" onclick="runTrackedGroupsComparison()" style="padding:.4rem .8rem; font-weight:700">
+              ⚡ Yeniden Kıyasla
+            </button>
+          </div>
+        </div>
 
+        <!-- SEÇİLİ GRUPLAR BİLGİ ŞERİDİ (PATRONUN ÇİZDİĞİ TURUNCU ALANIN GELİŞMİŞ HALİ) -->
+        <div id="selectedGroupsChips" style="display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.8rem; margin-bottom:.8rem; padding:.7rem; background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:8px">
+          <!-- JS ile seçili grupların isimleri ve gerçek toplam üye sayıları buraya chip olarak basılacak -->
+        </div>
+
+        <!-- ARAMA ÇUBUĞU -->
+        <div style="display:flex; gap:.6rem; margin-bottom:1rem">
+          <input type="text" id="commonSearchInput" oninput="filterCommonMembersTable()" placeholder="🔎 İsim, @kullanıcıadı, ID veya telefon ile canlı filtrele..." style="flex:1; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem .8rem; border-radius:8px; font-size:.82rem">
+          <button type="button" class="act-btn" onclick="document.getElementById('commonSearchInput').value=''; filterCommonMembersTable();" title="Aramayı Temizle">✕</button>
+        </div>
+
+        <!-- YÜKLENİYOR BİLDİRİMİ -->
+        <div id="compareLoading" style="display:none; text-align:center; padding:3.5rem 1rem">
+          <div class="spin-icon" style="width:28px; height:28px; border-width:3px; margin:0 auto .75rem auto"></div>
+          <div style="font-size:.9rem; font-weight:600; color:var(--gold)" id="compareLoadingText">Gruplar karşılaştırılıyor, lütfen bekleyin...</div>
+        </div>
+
+        <!-- BOŞ DURUM -->
+        <div id="compareEmptyState" style="text-align:center; padding:3.5rem 1rem; color:var(--text-muted); font-size:.85rem">
+          Sol taraftan en az 2 grup seçip <b>"Seçilenleri Karşılaştır"</b> butonuna basarak ortak üyeleri listeleyebilirsiniz.
+        </div>
+
+        <!-- SONUÇ TABLOSU ALANI -->
+        <div id="compareResultsArea" style="display:none">
           <div class="rules-table-wrap">
             <table class="rules-table">
               <thead>
@@ -597,10 +686,11 @@
                   <th>Kullanıcı Adı</th>
                   <th>ID</th>
                   <th>Telefon</th>
-                  <th style="text-align:right">Eylemler (Yetkili İse)</th>
+                  <th>Bulunduğu Gruplar</th>
+                  <th style="text-align:right">Eylemler (Dinamik Çıkarma)</th>
                 </tr>
               </thead>
-              <tbody id="inspectResultsTableBody">
+              <tbody id="compareResultsTableBody">
                 <!-- Javascript ile doldurulacak -->
               </tbody>
             </table>
@@ -822,6 +912,29 @@
   </div>
 </div>
 
+<!-- 5. GRUP İSMİ DÜZENLE MODALI -->
+<div id="modalRenameGroup" class="modal-overlay" onclick="closeModalsOnOverlay(event)">
+  <div class="modal-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.2rem">
+      <h3 style="font-size:1.1rem; font-weight:700">✏️ Grup Özel İsmini Düzenle</h3>
+      <button class="act-btn" onclick="closeModal('modalRenameGroup')">✕</button>
+    </div>
+    <form onsubmit="submitRenameGroup(event)" style="display:flex; flex-direction:column; gap:1rem">
+      <input type="hidden" id="rename_group_id">
+      <div>
+        <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Yeni Grup Adı</label>
+        <input type="text" id="rename_group_title_input" required placeholder="Örn: Ana VIP, Yedek VIP" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.7rem; border-radius:8px">
+        <p style="font-size:.75rem; color:var(--text-muted); margin-top:.3rem">
+          Bu isim tablolarda, butonlarda ve kıyaslamalarda görünecektir.
+        </p>
+      </div>
+      <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.75rem; border-radius:8px">
+        Kaydet
+      </button>
+    </form>
+  </div>
+</div>
+
 <script>
 function showTab(tabId) {
   document.querySelectorAll('.h-tab-btn').forEach(b => b.classList.remove('active'));
@@ -995,87 +1108,392 @@ function openMoveRuleModal(ruleId, accId) {
 }
 
 // -------------------------------------------------------------
-// ORTAK ÜYE TARAMA (AJAX)
+// ÇOKLU GRUP ORTAK KATILIMCI ANALİZİ & TAKİP SİSTEMİ
 // -------------------------------------------------------------
-async function runMemberInspection(e) {
-  e.preventDefault();
-  const accId = document.getElementById('inspect_account_id').value;
-  const chatA = document.getElementById('inspect_chat_a').value.trim();
-  const chatB = document.getElementById('inspect_chat_b').value.trim();
+let allCommonMembers = [];
+let currentComparedGroups = [];
 
-  const loading = document.getElementById('inspectLoading');
-  const emptyState = document.getElementById('inspectEmptyState');
-  const resultsArea = document.getElementById('inspectResultsArea');
-  const submitBtn = document.getElementById('inspectSubmitBtn');
+async function submitAddTrackedGroup(e) {
+  e.preventDefault();
+  const accId = document.getElementById('new_group_account_id').value;
+  const chatId = document.getElementById('new_group_chat_id').value.trim();
+  const customTitle = document.getElementById('new_group_custom_title').value.trim();
+  const btn = document.getElementById('addTrackedGroupBtn');
+
+  if (!accId || !chatId) {
+    alert('Lütfen hesap ve grup ID/linki giriniz.');
+    return;
+  }
+
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin-icon" style="width:14px; height:14px; border-width:2px; display:inline-block; vertical-align:middle; margin-right:5px"></span> Telegram Taranıyor...';
+
+  try {
+    const fd = new FormData();
+    fd.append('account_id', accId);
+    fd.append('chat_id', chatId);
+    if (customTitle) fd.append('custom_title', customTitle);
+
+    const resp = await fetch('/tracked-groups/add', { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'Grup eklenemedi veya taranamadı.'));
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      return;
+    }
+
+    alert(`✅ "${data.group.display_name}" başarıyla eklendi!\nResmi Üye: ${data.group.total_members}\nTaranan: ${data.group.scanned_members}`);
+    location.reload();
+  } catch(err) {
+    alert('Sunucu hatası: ' + err.message);
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+  }
+}
+
+async function scanSingleTrackedGroup(groupId) {
+  const card = document.getElementById(`tg_card_${groupId}`);
+  if (!confirm('Bu grubun katılımcılarını Telegram üzerinden yeniden taramak istiyor musunuz?')) return;
+
+  const originalOpacity = card ? card.style.opacity : '1';
+  if (card) card.style.opacity = '0.5';
+
+  try {
+    const resp = await fetch(`/tracked-groups/${groupId}/scan`, { method: 'POST' });
+    const data = await resp.json();
+
+    if (card) card.style.opacity = originalOpacity;
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'Tarama başarısız.'));
+      return;
+    }
+
+    const totalEl = document.getElementById(`tg_total_${groupId}`);
+    const scannedEl = document.getElementById(`tg_scanned_${groupId}`);
+    const timeEl = document.getElementById(`tg_time_${groupId}`);
+
+    if (totalEl) totalEl.innerText = data.total_members;
+    if (scannedEl) scannedEl.innerText = data.scanned_members;
+    if (timeEl) timeEl.innerText = (data.last_scanned_at || '').substring(11, 16);
+
+    alert(`🔄 "${data.display_name}" güncellendi!\nToplam: ${data.total_members} üye\nTaranan: ${data.scanned_members}`);
+    runTrackedGroupsComparison();
+  } catch(e) {
+    if (card) card.style.opacity = originalOpacity;
+    alert('İşlem hatası: ' + e.message);
+  }
+}
+
+async function scanAllTrackedGroups() {
+  if (!confirm('Takip edilen TÜM grupları Telegram üzerinden sırayla güncellemek istediğinize emin misiniz?')) return;
+  const btn = document.getElementById('btnScanAll');
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Taranıyor...';
+
+  try {
+    const resp = await fetch('/tracked-groups/scan-all', { method: 'POST' });
+    const data = await resp.json();
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'Toplu tarama başarısız.'));
+      return;
+    }
+
+    alert('✅ Tüm gruplar başarıyla tarandı ve güncellendi!');
+    location.reload();
+  } catch(e) {
+    btn.disabled = false;
+    btn.innerHTML = originalText;
+    alert('Hata: ' + e.message);
+  }
+}
+
+function openRenameGroupModal(groupId, currentTitle) {
+  document.getElementById('rename_group_id').value = groupId;
+  document.getElementById('rename_group_title_input').value = currentTitle;
+  openModal('modalRenameGroup');
+}
+
+async function submitRenameGroup(e) {
+  e.preventDefault();
+  const groupId = document.getElementById('rename_group_id').value;
+  const newTitle = document.getElementById('rename_group_title_input').value.trim();
+
+  try {
+    const fd = new FormData();
+    fd.append('custom_title', newTitle);
+    const resp = await fetch(`/tracked-groups/${groupId}/rename`, { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'İsim güncellenemedi.'));
+      return;
+    }
+
+    closeModal('modalRenameGroup');
+    const displayEl = document.getElementById(`tg_title_display_${groupId}`);
+    if (displayEl) displayEl.innerText = data.display_name;
+
+    runTrackedGroupsComparison();
+  } catch(e) {
+    alert('Hata: ' + e.message);
+  }
+}
+
+async function deleteTrackedGroup(groupId, title) {
+  if (!confirm(`"${title}" grubunu takipten çıkarmak ve kayıtlı verilerini silmek istediğinize emin misiniz?`)) return;
+
+  try {
+    const resp = await fetch(`/tracked-groups/${groupId}/delete`, { method: 'POST' });
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'Silinemedi.'));
+      return;
+    }
+
+    const card = document.getElementById(`tg_card_${groupId}`);
+    if (card) card.remove();
+
+    const remaining = document.querySelectorAll('.compare-group-chk').length;
+    const badge = document.getElementById('trackedGroupCountBadge');
+    if (badge) badge.innerText = remaining;
+
+    runTrackedGroupsComparison();
+  } catch(e) {
+    alert('Hata: ' + e.message);
+  }
+}
+
+function getSelectedGroupIds() {
+  const chks = document.querySelectorAll('.compare-group-chk:checked');
+  return Array.from(chks).map(c => parseInt(c.dataset.groupId));
+}
+
+function toggleSelectAllTrackedGroups(master) {
+  document.querySelectorAll('.compare-group-chk').forEach(c => c.checked = master.checked);
+  updateSelectedGroupsUI();
+  runTrackedGroupsComparison();
+}
+
+function updateSelectedGroupsUI() {
+  const allChks = document.querySelectorAll('.compare-group-chk');
+  const selChks = document.querySelectorAll('.compare-group-chk:checked');
+  const master = document.getElementById('chkSelectAllGroups');
+  if (master) master.checked = (allChks.length > 0 && allChks.length === selChks.length);
+}
+
+async function runTrackedGroupsComparison() {
+  const groupIds = getSelectedGroupIds();
+  const loading = document.getElementById('compareLoading');
+  const emptyState = document.getElementById('compareEmptyState');
+  const resultsArea = document.getElementById('compareResultsArea');
+  const badge = document.getElementById('resultCountBadge');
+  const chipsContainer = document.getElementById('selectedGroupsChips');
+
+  if (groupIds.length < 2) {
+    emptyState.style.display = 'block';
+    emptyState.innerHTML = 'Kıyaslama yapabilmek için sol taraftaki listeden <b>en az 2 grup</b> seçmelisiniz.';
+    resultsArea.style.display = 'none';
+    badge.style.display = 'none';
+    chipsContainer.innerHTML = '<span style="color:var(--text-muted); font-size:.8rem">En az 2 grup seçiniz.</span>';
+    return;
+  }
+
+  const minCommonVal = document.getElementById('filterMinCommon').value;
+  const minCommon = (minCommonVal === 'all') ? groupIds.length : parseInt(minCommonVal);
 
   loading.style.display = 'block';
   emptyState.style.display = 'none';
   resultsArea.style.display = 'none';
-  submitBtn.disabled = true;
 
   try {
-    const formData = new FormData();
-    formData.append('account_id', accId);
-    formData.append('chat_a', chatA);
-    formData.append('chat_b', chatB);
-
-    const resp = await fetch('/members/inspect', {
+    const resp = await fetch('/tracked-groups/compare', {
       method: 'POST',
-      body: formData
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_ids: groupIds, min_common: minCommon })
     });
     const data = await resp.json();
-
     loading.style.display = 'none';
-    submitBtn.disabled = false;
 
-    if (!resp.ok || data.error) {
-      alert('Hata: ' + (data.error || 'Tarama başarısız oldu.'));
+    if (!resp.ok || !data.ok) {
       emptyState.style.display = 'block';
+      emptyState.innerText = 'Hata: ' + (data.error || 'Karşılaştırma yapılamadı.');
       return;
     }
 
-    resultsArea.style.display = 'block';
-    document.getElementById('cntGroupA').innerText = data.count_a || 0;
-    document.getElementById('cntGroupB').innerText = data.count_b || 0;
-    document.getElementById('cntCommon').innerText = data.common_count || 0;
-    document.getElementById('resultCountBadge').innerText = (data.common_count || 0) + ' Ortak Üye';
-    document.getElementById('resultCountBadge').style.display = 'inline-block';
+    currentComparedGroups = data.selected_groups || [];
+    allCommonMembers = data.common_members || [];
 
-    const tbody = document.getElementById('inspectResultsTableBody');
-    tbody.innerHTML = '';
-
-    if (!data.common_members || data.common_members.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:2rem">İki grup arasında filtrelenmemiş ortak üye bulunamadı.</td></tr>';
-      return;
-    }
-
-    data.common_members.forEach(m => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><b>${m.name || '—'}</b></td>
-        <td>${m.username ? '@' + m.username : '—'}</td>
-        <td><code>${m.id}</code></td>
-        <td>${m.phone || 'Gizli'}</td>
-        <td style="text-align:right">
-          <div style="display:inline-flex; gap:.3rem">
-            <button class="act-btn act-btn-danger" onclick="kickMember(${accId}, '${chatA}', ${m.id}, 'Kaynak Grup A')">Gruptan Çıkar (A)</button>
-            <button class="act-btn act-btn-danger" onclick="kickMember(${accId}, '${chatB}', ${m.id}, 'Hedef Grup B')">Gruptan Çıkar (B)</button>
-          </div>
-        </td>
+    // Render group chips with true member counts (turuncu alan)
+    chipsContainer.innerHTML = '';
+    currentComparedGroups.forEach(g => {
+      const chip = document.createElement('div');
+      chip.style.cssText = 'background:var(--surface2); border:1px solid var(--border); padding:.35rem .75rem; border-radius:6px; font-size:.78rem; display:flex; align-items:center; gap:.4rem';
+      chip.innerHTML = `
+        <span style="color:var(--text); font-weight:600">${g.display_name}:</span>
+        <b style="color:#93c5fd">${g.total_members} Üye</b>
+        <span style="font-size:.7rem; color:var(--text-muted)">(${g.scanned_members} taranan)</span>
       `;
-      tbody.appendChild(tr);
+      chipsContainer.appendChild(chip);
     });
 
-  } catch (err) {
+    badge.innerText = `${data.common_count} Ortak Üye`;
+    badge.style.display = 'inline-block';
+
+    resultsArea.style.display = 'block';
+    renderCommonMembersTable(allCommonMembers);
+
+  } catch(e) {
     loading.style.display = 'none';
-    submitBtn.disabled = false;
     emptyState.style.display = 'block';
-    alert('Sunucu hatası: ' + err.message);
+    emptyState.innerText = 'Sunucu bağlantı hatası: ' + e.message;
+  }
+}
+
+function renderCommonMembersTable(members) {
+  const tbody = document.getElementById('compareResultsTableBody');
+  tbody.innerHTML = '';
+
+  if (!members || members.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="6" style="text-align:center; color:var(--text-muted); padding:3rem">
+          Seçili gruplar arasında belirtilen kriterde ortak üye bulunamadı.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  const totalGroupsCount = currentComparedGroups.length;
+
+  members.forEach(m => {
+    const tr = document.createElement('tr');
+    tr.className = 'common-member-row';
+    tr.dataset.searchText = `${m.name} ${m.username} ${m.id} ${m.phone}`.toLowerCase();
+
+    // Group badges & dynamic kick buttons with real group name!
+    let groupBadges = '';
+    let kickButtons = '';
+
+    m.groups.forEach(g => {
+      groupBadges += `<span class="badge badge-gold" style="margin-right:.25rem; font-size:.72rem; padding:.15rem .45rem">${g.display_name}</span>`;
+      kickButtons += `
+        <button type="button" class="act-btn act-btn-danger" style="margin-right:.25rem; margin-bottom:.25rem" onclick="kickMember(${g.account_id || 0}, '${g.chat_id}', ${m.id}, '${g.display_name}')" title="${g.display_name} grubundan at">
+          Gruptan Çıkar (${g.display_name})
+        </button>
+      `;
+    });
+
+    const ratioSpan = `<span style="font-size:.7rem; color:var(--text-muted); display:inline-block; margin-top:.2rem">(${m.groups.length} / ${totalGroupsCount} grupta)</span>`;
+
+    // Ignore button
+    const ignoreBtn = `
+      <button type="button" class="act-btn act-btn-gold" style="margin-bottom:.25rem" onclick="quickIgnoreUser('${m.id}', '${m.name.replace(/'/g, "\\'")}')" title="Bu hesabı hiçbir grupta kıyaslamaya sokma">
+        🚫 Yoksay
+      </button>
+    `;
+
+    tr.innerHTML = `
+      <td><b>${m.name || '—'}</b></td>
+      <td>${m.username ? '@' + m.username : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td><code>${m.id}</code></td>
+      <td>${m.phone || '<span style="color:var(--text-muted)">Gizli</span>'}</td>
+      <td>
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:.25rem">
+          ${groupBadges}
+        </div>
+        ${ratioSpan}
+      </td>
+      <td style="text-align:right">
+        <div style="display:inline-flex; flex-wrap:wrap; justify-content:flex-end; gap:.25rem">
+          ${kickButtons}
+          ${ignoreBtn}
+        </div>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function filterCommonMembersTable() {
+  const query = (document.getElementById('commonSearchInput').value || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('.common-member-row');
+  let visibleCount = 0;
+
+  rows.forEach(r => {
+    const text = r.dataset.searchText || '';
+    if (!query || text.includes(query)) {
+      r.style.display = '';
+      visibleCount++;
+    } else {
+      r.style.display = 'none';
+    }
+  });
+
+  const badge = document.getElementById('resultCountBadge');
+  if (badge) {
+    badge.innerText = `${visibleCount} Ortak Üye`;
+  }
+}
+
+async function quickIgnoreUser(userId, name) {
+  if (!confirm(`${name} (${userId}) kullanıcısını Yoksayılanlar listesine eklemek istiyor musunuz?\n\nEklediğinizde bu kullanıcı HİÇBİR grupta kıyaslamaya girmeyecektir.`)) return;
+
+  try {
+    const resp = await fetch('/ignored-members/add', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ identifier: userId, note: name })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      alert(`🚫 ${name} (${userId}) yoksayılanlar listesine eklendi.`);
+      const list = document.getElementById('ignoredMembersList');
+      if (list) {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:var(--surface2); padding:.3rem .55rem; border-radius:6px; font-size:.76rem';
+        div.innerHTML = `<code>${userId}</code> <span style="font-size:.7rem; color:var(--text-muted)">Yeni Eklendi</span>`;
+        list.prepend(div);
+      }
+      runTrackedGroupsComparison();
+    }
+  } catch(e) {
+    alert('Hata: ' + e.message);
+  }
+}
+
+async function deleteIgnoredMember(id) {
+  if (!confirm('Bu engeli kaldırmak istediğinize emin misiniz?')) return;
+  try {
+    const resp = await fetch(`/ignored-members/${id}/delete`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' }
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      const row = document.getElementById(`im_row_${id}`);
+      if (row) row.remove();
+      runTrackedGroupsComparison();
+    }
+  } catch(e) {
+    alert('Hata: ' + e.message);
   }
 }
 
 async function kickMember(accId, chatId, userId, chatLabel) {
-  if (!confirm(`${userId} ID'li kullanıcı ${chatLabel} grubundan çıkarılsın mı?`)) return;
+  if (!confirm(`${userId} ID'li kullanıcı "${chatLabel}" grubundan çıkarılsın mı?`)) return;
   try {
     const fd = new FormData();
     fd.append('account_id', accId);
@@ -1085,7 +1503,8 @@ async function kickMember(accId, chatId, userId, chatLabel) {
     const resp = await fetch('/members/kick', { method: 'POST', body: fd });
     const res = await resp.json();
     if (res.ok) {
-      alert('Kullanıcı başarıyla gruptan çıkarıldı!');
+      alert(`✅ Kullanıcı "${chatLabel}" grubundan başarıyla çıkarıldı!`);
+      runTrackedGroupsComparison();
     } else {
       alert('Hata: ' + (res.error || 'Yetki yetersiz veya çıkarılamadı.'));
     }
@@ -1093,6 +1512,14 @@ async function kickMember(accId, chatId, userId, chatLabel) {
     alert('İşlem hatası: ' + e.message);
   }
 }
+
+// Sayfa yüklendiğinde gruplar varsa otomatik kıyaslamayı hazırla
+document.addEventListener('DOMContentLoaded', () => {
+  const chks = document.querySelectorAll('.compare-group-chk:checked');
+  if (chks.length >= 2) {
+    runTrackedGroupsComparison();
+  }
+});
 </script>
 </body>
 </html>

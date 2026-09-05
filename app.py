@@ -21,7 +21,8 @@ import qrcode
 import database
 from database import (
     SessionLocal, Rule, Account, MessageMapping, WordFilter,
-    User, Teacher, TeacherReaction, hash_password, UserTask, IgnoredMember
+    User, Teacher, TeacherReaction, hash_password, UserTask, IgnoredMember,
+    TrackedGroup, TrackedGroupMember
 )
 
 from contextlib import asynccontextmanager
@@ -2310,6 +2311,7 @@ async def hukumdar_panel(request: Request, db: Session = Depends(get_db)):
     rules = db.query(Rule).order_by(Rule.id.asc()).all()
     tasks = db.query(UserTask).order_by(UserTask.id.desc()).all()
     ignored_members = db.query(IgnoredMember).order_by(IgnoredMember.id.desc()).all()
+    tracked_groups = db.query(TrackedGroup).order_by(TrackedGroup.id.asc()).all()
     active_client_ids = set(clients.keys())
     user_acc_counts = {u.id: sum(1 for a in accounts if a.user_id == u.id) for u in users}
     pending_tasks_count = sum(1 for t in tasks if t.status == "pending")
@@ -2323,6 +2325,7 @@ async def hukumdar_panel(request: Request, db: Session = Depends(get_db)):
             "rules": rules,
             "tasks": tasks,
             "ignored_members": ignored_members,
+            "tracked_groups": tracked_groups,
             "active_client_ids": active_client_ids,
             "user_acc_counts": user_acc_counts,
             "pending_tasks_count": pending_tasks_count
@@ -2603,6 +2606,478 @@ async def hukumdar_toggle_task_status(
         db.commit()
     return RedirectResponse(url="/hukumdar", status_code=303)
 
+# ── GRUP / KANAL ORTAK ÜYE ANALİZİ VE KALICI GRUP TAKİBİ ──
+
+async def resolve_and_fetch_group_info(client: TelegramClient, chat_input: str):
+    """
+    ID, @kullanıcıadı veya t.me/+ davet linki verilen bir grubun
+    Telegram entity'sini, resmi başlığını ve gerçek toplam üye sayısını çeker.
+    """
+    chat_str = chat_input.strip()
+    invite_hash = None
+    if "t.me/+" in chat_str:
+        invite_hash = chat_str.split("t.me/+")[-1].split("?")[0].split("/")[0]
+    elif "t.me/joinchat/" in chat_str:
+        invite_hash = chat_str.split("t.me/joinchat/")[-1].split("?")[0].split("/")[0]
+
+    entity = None
+    if invite_hash:
+        try:
+            res = await client(functions.messages.CheckChatInviteRequest(hash=invite_hash))
+            if isinstance(res, types.ChatInviteAlready):
+                entity = res.chat
+            elif hasattr(res, 'chat'):
+                entity = res.chat
+        except Exception:
+            try:
+                imp = await client(functions.messages.ImportChatInviteRequest(hash=invite_hash))
+                if hasattr(imp, 'chats') and imp.chats:
+                    entity = imp.chats[0]
+            except Exception:
+                pass
+
+    if not entity:
+        clean_input = chat_str
+        if "t.me/" in clean_input:
+            clean_input = clean_input.split("t.me/")[-1].split("?")[0].split("/")[0].lstrip("@")
+        if clean_input.lstrip("-").isdigit():
+            chat_target = int(clean_input)
+        else:
+            chat_target = clean_input
+        entity = await client.get_entity(chat_target)
+
+    # Gerçek grup/kanal başlığı
+    t_title = getattr(entity, 'title', None) or getattr(entity, 'first_name', '') or str(chat_input)
+
+    # Telegram'ın resmi toplam katılımcı sayısı
+    total_count = 0
+    try:
+        if isinstance(entity, types.Channel):
+            full = await client(functions.channels.GetFullChannelRequest(entity))
+            total_count = getattr(full.full_chat, 'participants_count', 0) or 0
+        elif isinstance(entity, (types.Chat, types.ChatForbidden)):
+            full = await client(functions.messages.GetFullChatRequest(entity.id))
+            if hasattr(full.full_chat, 'participants') and hasattr(full.full_chat.participants, 'participants'):
+                total_count = len(full.full_chat.participants.participants)
+            else:
+                total_count = getattr(full.full_chat, 'participants_count', 0) or 0
+        else:
+            total_count = getattr(entity, 'participants_count', 0) or 0
+    except Exception as e:
+        print(f"[Resolve] GetFull hatası ({chat_str}): {e}")
+        total_count = getattr(entity, 'participants_count', 0) or 0
+
+    return entity, t_title, total_count
+
+
+async def scrape_group_participants(client: TelegramClient, entity, max_limit=None):
+    """
+    Gruptaki tüm katılımcıları sınırsız (limit=None) veya belirtilen limitte tarar.
+    Silinmiş hesapları atlar.
+    """
+    participants = []
+    try:
+        async for user in client.iter_participants(entity, limit=max_limit):
+            if getattr(user, "deleted", False):
+                continue
+            first = getattr(user, "first_name", "") or ""
+            last = getattr(user, "last_name", "") or ""
+            full_name = f"{first} {last}".strip() or "İsimsiz"
+            u_phone = getattr(user, "phone", "") or ""
+            u_uname = getattr(user, "username", "") or ""
+            participants.append({
+                "user_id": user.id,
+                "first_name": first,
+                "last_name": last,
+                "name": full_name,
+                "username": u_uname,
+                "phone": f"+{u_phone}" if u_phone else ""
+            })
+    except Exception as e:
+        print(f"[Scrape] iter_participants hatası: {e}")
+        raise e
+    return participants
+
+
+@app.post("/tracked-groups/add")
+async def add_tracked_group(
+    request: Request,
+    account_id: int = Form(...),
+    chat_id: str = Form(...),
+    custom_title: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Yeni bir grubu takip listesine ekler, resmi üye sayısını ve katılımcılarını
+    Telegram'dan çekip veritabanına kalıcı olarak kaydeder.
+    """
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    if account_id not in clients:
+        return JSONResponse({"error": "Seçilen hesap şu an aktif veya bağlı değil."}, status_code=400)
+
+    client: TelegramClient = clients[account_id]
+    chat_clean = chat_id.strip()
+    if not chat_clean:
+        return JSONResponse({"error": "Grup ID veya linki boş olamaz."}, status_code=400)
+
+    try:
+        entity, tg_title, official_count = await asyncio.wait_for(
+            resolve_and_fetch_group_info(client, chat_clean),
+            timeout=35
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Grup bilgisi alınamadı: {e}"}, status_code=400)
+
+    try:
+        participants = await asyncio.wait_for(
+            scrape_group_participants(client, entity),
+            timeout=120
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Katılımcılar taranamadı: {e}"}, status_code=400)
+
+    resolved_chat_id = str(getattr(entity, 'id', chat_clean))
+    if not resolved_chat_id.startswith("-") and isinstance(entity, types.Channel):
+        resolved_chat_id = f"-100{resolved_chat_id}"
+
+    # Zaten var mı kontrol et
+    existing = db.query(TrackedGroup).filter(
+        (TrackedGroup.chat_id == resolved_chat_id) | 
+        (TrackedGroup.chat_id == chat_clean)
+    ).first()
+
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    if existing:
+        group = existing
+        group.account_id = account_id
+        if custom_title and custom_title.strip():
+            group.custom_title = custom_title.strip()
+        group.telegram_title = tg_title
+        group.chat_id = resolved_chat_id
+        if "t.me/" in chat_clean:
+            group.invite_link = chat_clean
+        group.total_members = max(official_count, len(participants))
+        group.scanned_members = len(participants)
+        group.last_scanned_at = now_str
+    else:
+        group = TrackedGroup(
+            account_id=account_id,
+            custom_title=custom_title.strip() if custom_title and custom_title.strip() else None,
+            telegram_title=tg_title,
+            chat_id=resolved_chat_id,
+            invite_link=chat_clean if "t.me/" in chat_clean else None,
+            total_members=max(official_count, len(participants)),
+            scanned_members=len(participants),
+            last_scanned_at=now_str
+        )
+        db.add(group)
+        db.commit()
+        db.refresh(group)
+
+    # Eski katılımcıları temizle ve yenilerini ekle
+    db.query(TrackedGroupMember).filter(TrackedGroupMember.group_id == group.id).delete()
+    new_members = [
+        TrackedGroupMember(
+            group_id=group.id,
+            user_id=p["user_id"],
+            first_name=p["first_name"],
+            last_name=p["last_name"],
+            username=p["username"],
+            phone=p["phone"],
+            scanned_at=now_str
+        )
+        for p in participants
+    ]
+    if new_members:
+        db.bulk_save_objects(new_members)
+    db.commit()
+
+    return JSONResponse({
+        "ok": True,
+        "group": {
+            "id": group.id,
+            "account_id": group.account_id,
+            "display_name": group.display_name,
+            "custom_title": group.custom_title,
+            "telegram_title": group.telegram_title,
+            "chat_id": group.chat_id,
+            "total_members": group.total_members,
+            "scanned_members": group.scanned_members,
+            "last_scanned_at": group.last_scanned_at
+        }
+    })
+
+
+@app.post("/tracked-groups/{group_id}/scan")
+async def scan_single_tracked_group(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Kayıtlı tek bir grubu Telegram'dan yeniden tarar ve günceller."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    group = db.query(TrackedGroup).filter(TrackedGroup.id == group_id).first()
+    if not group:
+        return JSONResponse({"error": "Grup bulunamadı"}, status_code=404)
+
+    client = None
+    if group.account_id and group.account_id in clients:
+        client = clients[group.account_id]
+    elif clients:
+        client = next(iter(clients.values()))
+
+    if not client:
+        return JSONResponse({"error": "Taramayı yapacak aktif bir hesap bulunamadı."}, status_code=400)
+
+    target = group.invite_link or group.chat_id
+    try:
+        entity, tg_title, official_count = await asyncio.wait_for(
+            resolve_and_fetch_group_info(client, target),
+            timeout=35
+        )
+        participants = await asyncio.wait_for(
+            scrape_group_participants(client, entity),
+            timeout=120
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Tarama hatası: {e}"}, status_code=400)
+
+    now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    group.telegram_title = tg_title
+    group.total_members = max(official_count, len(participants))
+    group.scanned_members = len(participants)
+    group.last_scanned_at = now_str
+
+    db.query(TrackedGroupMember).filter(TrackedGroupMember.group_id == group.id).delete()
+    new_members = [
+        TrackedGroupMember(
+            group_id=group.id,
+            user_id=p["user_id"],
+            first_name=p["first_name"],
+            last_name=p["last_name"],
+            username=p["username"],
+            phone=p["phone"],
+            scanned_at=now_str
+        )
+        for p in participants
+    ]
+    if new_members:
+        db.bulk_save_objects(new_members)
+    db.commit()
+
+    return JSONResponse({
+        "ok": True,
+        "group_id": group.id,
+        "display_name": group.display_name,
+        "total_members": group.total_members,
+        "scanned_members": group.scanned_members,
+        "last_scanned_at": group.last_scanned_at
+    })
+
+
+@app.post("/tracked-groups/scan-all")
+async def scan_all_tracked_groups(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Kayıtlı tüm grupları sırayla tarar ve günceller."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    groups = db.query(TrackedGroup).order_by(TrackedGroup.id.asc()).all()
+    if not groups:
+        return JSONResponse({"error": "Kayıtlı grup bulunmuyor"}, status_code=400)
+
+    results = []
+    for group in groups:
+        client = None
+        if group.account_id and group.account_id in clients:
+            client = clients[group.account_id]
+        elif clients:
+            client = next(iter(clients.values()))
+
+        if not client:
+            results.append({"id": group.id, "ok": False, "error": "Aktif hesap yok"})
+            continue
+
+        target = group.invite_link or group.chat_id
+        try:
+            entity, tg_title, official_count = await asyncio.wait_for(
+                resolve_and_fetch_group_info(client, target),
+                timeout=35
+            )
+            participants = await asyncio.wait_for(
+                scrape_group_participants(client, entity),
+                timeout=120
+            )
+            now_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+            group.telegram_title = tg_title
+            group.total_members = max(official_count, len(participants))
+            group.scanned_members = len(participants)
+            group.last_scanned_at = now_str
+
+            db.query(TrackedGroupMember).filter(TrackedGroupMember.group_id == group.id).delete()
+            new_members = [
+                TrackedGroupMember(
+                    group_id=group.id,
+                    user_id=p["user_id"],
+                    first_name=p["first_name"],
+                    last_name=p["last_name"],
+                    username=p["username"],
+                    phone=p["phone"],
+                    scanned_at=now_str
+                )
+                for p in participants
+            ]
+            if new_members:
+                db.bulk_save_objects(new_members)
+            db.commit()
+            results.append({"id": group.id, "ok": True, "total": group.total_members, "scanned": group.scanned_members})
+        except Exception as e:
+            results.append({"id": group.id, "ok": False, "error": str(e)})
+
+    return JSONResponse({"ok": True, "results": results})
+
+
+@app.post("/tracked-groups/{group_id}/rename")
+async def rename_tracked_group(
+    group_id: int,
+    request: Request,
+    custom_title: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """Takip edilen grubun özel ismini düzenler."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    group = db.query(TrackedGroup).filter(TrackedGroup.id == group_id).first()
+    if not group:
+        return JSONResponse({"error": "Grup bulunamadı"}, status_code=404)
+
+    group.custom_title = custom_title.strip() if custom_title and custom_title.strip() else None
+    db.commit()
+    return JSONResponse({
+        "ok": True,
+        "group_id": group.id,
+        "custom_title": group.custom_title,
+        "display_name": group.display_name
+    })
+
+
+@app.post("/tracked-groups/{group_id}/delete")
+async def delete_tracked_group(
+    group_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """Takip edilen grubu ve önbelleğe alınan üyelerini siler."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    group = db.query(TrackedGroup).filter(TrackedGroup.id == group_id).first()
+    if group:
+        db.delete(group)
+        db.commit()
+    return JSONResponse({"ok": True, "deleted_id": group_id})
+
+
+@app.post("/tracked-groups/compare")
+async def compare_tracked_groups(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Seçilen sınırsız sayıdaki grubun katılımcılarını karşılaştırır.
+    Filtrelenen/yoksayılan hesapları (IgnoredMember) hariç tutar.
+    Her kullanıcının hangi gruplarda olduğunu gerçek grup isimleriyle birlikte döner.
+    """
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    try:
+        body = await request.json()
+        group_ids = body.get("group_ids", [])
+        min_common = int(body.get("min_common", 2))
+    except Exception:
+        group_ids = []
+        min_common = 2
+
+    if not group_ids or len(group_ids) < 2:
+        return JSONResponse({"error": "Kıyaslama için en az 2 grup seçmelisiniz."}, status_code=400)
+
+    groups = db.query(TrackedGroup).filter(TrackedGroup.id.in_(group_ids)).all()
+    if len(groups) < 2:
+        return JSONResponse({"error": "Seçilen gruplardan en az 2 tanesi kayıtlı bulunamadı."}, status_code=400)
+
+    # IgnoredMember kümesini hazırla
+    ignored_rows = db.query(IgnoredMember).all()
+    ignored_set = set()
+    for row in ignored_rows:
+        val = (row.identifier or "").strip().lower().lstrip("+").lstrip("@")
+        if val:
+            ignored_set.add(val)
+
+    # Grup bilgilerini hazırla
+    group_info = {}
+    for g in groups:
+        group_info[g.id] = {
+            "id": g.id,
+            "account_id": g.account_id,
+            "chat_id": g.chat_id,
+            "display_name": g.display_name,
+            "custom_title": g.custom_title,
+            "telegram_title": g.telegram_title,
+            "total_members": g.total_members,
+            "scanned_members": g.scanned_members
+        }
+
+    # Kullanıcıları gruplara göre eşleştir
+    user_map = {}
+    for g in groups:
+        members = db.query(TrackedGroupMember).filter(TrackedGroupMember.group_id == g.id).all()
+        for m in members:
+            uid = m.user_id
+            u_phone_str = (m.phone or "").lstrip("+")
+            u_uname_str = (m.username or "").lower().lstrip("@")
+
+            # Filtrelenmiş hesap ise hiçbir grupta kıyaslamaya sokma
+            if str(uid) in ignored_set or (u_phone_str and u_phone_str in ignored_set) or (u_uname_str and u_uname_str in ignored_set):
+                continue
+
+            if uid not in user_map:
+                full_name = f"{m.first_name or ''} {m.last_name or ''}".strip() or "İsimsiz"
+                user_map[uid] = {
+                    "id": uid,
+                    "name": full_name,
+                    "username": m.username or "",
+                    "phone": m.phone or "",
+                    "groups": []
+                }
+            user_map[uid]["groups"].append(group_info[g.id])
+
+    # min_common koşuluna uyanları al
+    common_users = [
+        u for u in user_map.values()
+        if len(u["groups"]) >= min_common
+    ]
+    # En çok grupta ortak olanları en üstte göster
+    common_users.sort(key=lambda x: len(x["groups"]), reverse=True)
+
+    return JSONResponse({
+        "ok": True,
+        "selected_groups": [group_info[gid] for gid in group_ids if gid in group_info],
+        "total_selected": len(groups),
+        "min_common": min_common,
+        "common_count": len(common_users),
+        "common_members": common_users
+    })
+
+
 @app.post("/members/inspect")
 async def inspect_members(
     request: Request,
@@ -2611,73 +3086,66 @@ async def inspect_members(
     chat_b: str = Form(...),
     db: Session = Depends(get_db)
 ):
+    """
+    İki grup arasındaki ortak üyeleri canlı olarak tarar (eski sistem ve index.html ile uyumlu).
+    2000 limiti kaldırılmıştır, Telegram'ın resmi üye sayılarını ve gerçek grup isimlerini döndürür.
+    """
     if account_id not in clients:
         return JSONResponse({"error": "Seçilen hesap şu an aktif veya bağlı değil."}, status_code=400)
 
     client: TelegramClient = clients[account_id]
 
-    async def get_chat_members(chat_str):
-        chat_str = chat_str.strip()
-        if chat_str.lstrip("-").isdigit():
-            chat_entity = int(chat_str)
-        else:
-            chat_entity = chat_str
-
-        members = {}
-        try:
-            entity = await client.get_entity(chat_entity)
-            async for user in client.iter_participants(entity, limit=2000):
-                if getattr(user, "deleted", False):
-                    continue
-                first = getattr(user, "first_name", "") or ""
-                last = getattr(user, "last_name", "") or ""
-                full_name = f"{first} {last}".strip() or "İsimsiz"
-                u_phone = getattr(user, "phone", "")
-                members[user.id] = {
-                    "id": user.id,
-                    "name": full_name,
-                    "username": getattr(user, "username", "") or "",
-                    "phone": f"+{u_phone}" if u_phone else ""
-                }
-        except Exception as e:
-            print(f"[Inspect] get_participants hatası ({chat_str}): {e}")
-            raise e
-        return members
+    async def get_chat_data(chat_str):
+        entity, t_title, total_cnt = await resolve_and_fetch_group_info(client, chat_str)
+        participants = await scrape_group_participants(client, entity)
+        members_dict = {p["user_id"]: p for p in participants}
+        return entity, t_title, max(total_cnt, len(participants)), len(participants), members_dict
 
     try:
-        members_a = await asyncio.wait_for(get_chat_members(chat_a), timeout=45)
+        _, title_a, total_a, count_a, members_a = await asyncio.wait_for(get_chat_data(chat_a), timeout=60)
     except Exception as e:
-        return JSONResponse({"error": f"Grup A üyeleri alınamadı: {e}"}, status_code=400)
+        return JSONResponse({"error": f"Grup A ({chat_a}) üyeleri alınamadı: {e}"}, status_code=400)
 
     try:
-        members_b = await asyncio.wait_for(get_chat_members(chat_b), timeout=45)
+        _, title_b, total_b, count_b, members_b = await asyncio.wait_for(get_chat_data(chat_b), timeout=60)
     except Exception as e:
-        return JSONResponse({"error": f"Grup B üyeleri alınamadı: {e}"}, status_code=400)
+        return JSONResponse({"error": f"Grup B ({chat_b}) üyeleri alınamadı: {e}"}, status_code=400)
 
     ignored_rows = db.query(IgnoredMember).all()
     ignored_set = set()
     for row in ignored_rows:
-        val = row.identifier.strip().lower().lstrip("+").lstrip("@")
-        ignored_set.add(val)
+        val = (row.identifier or "").strip().lower().lstrip("+").lstrip("@")
+        if val:
+            ignored_set.add(val)
 
     common_ids = set(members_a.keys()).intersection(set(members_b.keys()))
     common_members = []
     for uid in common_ids:
         m = members_a[uid]
-        u_id_str = str(m["id"])
-        u_phone_str = m["phone"].lstrip("+")
-        u_uname_str = m["username"].lower()
+        u_id_str = str(m["user_id"])
+        u_phone_str = (m["phone"] or "").lstrip("+")
+        u_uname_str = (m["username"] or "").lower().lstrip("@")
 
         if u_id_str in ignored_set or (u_phone_str and u_phone_str in ignored_set) or (u_uname_str and u_uname_str in ignored_set):
             continue
-        common_members.append(m)
+        common_members.append({
+            "id": m["user_id"],
+            "name": m["name"],
+            "username": m["username"],
+            "phone": m["phone"]
+        })
 
     return JSONResponse({
-        "count_a": len(members_a),
-        "count_b": len(members_b),
+        "title_a": title_a,
+        "title_b": title_b,
+        "total_a": total_a,
+        "total_b": total_b,
+        "count_a": count_a,
+        "count_b": count_b,
         "common_count": len(common_members),
         "common_members": common_members
     })
+
 
 @app.post("/members/kick")
 async def kick_chat_member(
@@ -2687,10 +3155,14 @@ async def kick_chat_member(
     user_id: int = Form(...),
     db: Session = Depends(get_db)
 ):
-    if account_id not in clients:
-        return JSONResponse({"error": "Hesap aktif değil"}, status_code=400)
+    """Kullanıcıyı belirtilen gruptan çıkarır."""
+    client = clients.get(account_id)
+    if not client:
+        if clients:
+            client = next(iter(clients.values()))
+        else:
+            return JSONResponse({"error": "Aktif bir Telegram hesabı bulunamadı."}, status_code=400)
 
-    client: TelegramClient = clients[account_id]
     chat_str = chat_id.strip()
     chat_entity = int(chat_str) if chat_str.lstrip("-").isdigit() else chat_str
 
@@ -2702,21 +3174,36 @@ async def kick_chat_member(
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
+
 @app.post("/ignored-members/add")
 async def add_ignored_member(
     request: Request,
-    identifier: str = Form(...),
+    identifier: str = Form(None),
     note: str = Form(None),
     db: Session = Depends(get_db)
 ):
-    clean = identifier.strip()
+    """Kıyaslamaya girmeyecek hesap ekler (Form ve JSON destekli)."""
+    if not identifier:
+        try:
+            body = await request.json()
+            identifier = body.get("identifier")
+            note = body.get("note")
+        except Exception:
+            pass
+
+    clean = (identifier or "").strip()
     if clean:
         existing = db.query(IgnoredMember).filter(IgnoredMember.identifier == clean).first()
         if not existing:
             db.add(IgnoredMember(identifier=clean, note=note, created_at=datetime.datetime.utcnow().isoformat()))
             db.commit()
+
+    if request.headers.get("accept") == "application/json" or request.headers.get("content-type") == "application/json":
+        return JSONResponse({"ok": True, "identifier": clean})
+
     ref = request.headers.get("referer", "/hukumdar")
     return RedirectResponse(url=ref, status_code=303)
+
 
 @app.post("/ignored-members/{item_id}/delete")
 async def delete_ignored_member(
@@ -2724,10 +3211,15 @@ async def delete_ignored_member(
     request: Request,
     db: Session = Depends(get_db)
 ):
+    """Kıyaslamaya girmeyecekler listesinden kaldırır."""
     item = db.query(IgnoredMember).filter(IgnoredMember.id == item_id).first()
     if item:
         db.delete(item)
         db.commit()
+
+    if request.headers.get("accept") == "application/json":
+        return JSONResponse({"ok": True, "deleted_id": item_id})
+
     ref = request.headers.get("referer", "/hukumdar")
     return RedirectResponse(url=ref, status_code=303)
 
