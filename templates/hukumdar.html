@@ -134,6 +134,9 @@
     <button class="h-tab-btn" onclick="showTab('tab-members')">
       👥 Ortak Üye Analizi
     </button>
+    <button class="h-tab-btn" onclick="showTab('tab-mole-hunt')" style="color:#f87171; border-left:1px solid rgba(239,68,68,.3)">
+      🎯 Orospu Evladı Avı
+    </button>
   </nav>
 
   <!-- ================================================================= -->
@@ -702,7 +705,194 @@
     </div>
   </div>
 
-</div>
+  <!-- ================================================================= -->
+  <!-- TAB 5: OROSPU EVLADI AVI (KÖSTEBEK DEDEKTİFİ & CANLI TUZAK)      -->
+  <!-- ================================================================= -->
+  <div id="tab-mole-hunt" class="tab-pane">
+    <div style="display:flex; flex-direction:column; gap:1.5rem">
+
+      <!-- ÜST BİLGİ KARTI -->
+      <div class="card" style="border-color:#ef4444; background:linear-gradient(180deg, rgba(239,68,68,.1) 0%, var(--surface) 100%)">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem">
+          <div>
+            <h2 style="font-size:1.3rem; font-weight:800; color:#f87171; margin:0; display:flex; align-items:center; gap:.5rem">
+              🎯 Orospu Evladı Avı <span class="badge" style="background:rgba(239,68,68,.2); color:#fca5a5; border-color:#ef4444; font-size:.7rem">Köstebek Dedektifi</span>
+            </h2>
+            <p style="font-size:.82rem; color:#cbd5e1; margin-top:.3rem">
+              Grubunuzdaki mesajları başka gruba 10 saniye içinde kopyalayan köstebekleri, Telegram'ın gizli üye engelini aşarak matematiksel kesinlikle yakalayın.
+            </p>
+          </div>
+          <div style="display:flex; gap:.5rem">
+            <span class="badge badge-gold" style="padding:.4rem .8rem; font-size:.75rem">1. Yöntem: Karşı Grubu Kazı</span>
+            <span class="badge" style="background:rgba(239,68,68,.2); color:#fca5a5; border:1px solid #ef4444; padding:.4rem .8rem; font-size:.75rem">2. Yöntem: 10 Dk Canlı Tuzak</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- İKİ KOLONLU ANA ALAN -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; align-items:start">
+
+        <!-- SOL KOLON: 1. AŞAMA - KARŞI GRUP MESAJ & TEPKİ KAZIYICI -->
+        <div class="card" style="border-color:var(--border)">
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+            <span style="color:#38bdf8">🕵️ 1. Karşı Grup Mesaj & Tepki Kazıyıcı</span>
+            <span class="badge" style="font-size:.7rem">Geriye Dönük Tarama</span>
+          </div>
+          <p style="font-size:.78rem; color:var(--text-muted); margin-top:.25rem">
+            Karşı grubun üyeleri gizli olsa bile, grupta mesaj atan ve emojilere basan kişilerin ID'leri açıktır. Karşı grubu kazıyarak bizim grubumuzda üye olanları yakalar.
+          </p>
+
+          <form onsubmit="runMoleScraper(event)" style="display:flex; flex-direction:column; gap:.75rem; margin-top:1rem">
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Taramayı Yapacak Hesap (Bizim grupta Admin olmalı)</label>
+              <select id="mole_scrape_acc_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+                <option value="">Hesap seçin...</option>
+                {% for acc in accounts %}
+                <option value="{{ acc.id }}" {% if acc.id in active_client_ids %}style="color:#4ade80"{% endif %}>
+                  {{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Bizim Grubumuz (Admin Olduğumuz Kaynak Grup ID veya Linki)</label>
+              <input type="text" id="mole_scrape_own_chat" placeholder="-100... veya https://t.me/..." required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+            </div>
+
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Karşı Kopyacı Grup (Bizi Kopyalayan Grup ID veya Linki)</label>
+              <input type="text" id="mole_scrape_rival_chat" placeholder="-100... veya https://t.me/..." required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+            </div>
+
+            <div style="display:flex; gap:.8rem; align-items:center">
+              <div style="flex:1">
+                <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Karşı Gruptan Taranacak Son Mesaj Sayısı</label>
+                <select id="mole_scrape_limit" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+                  <option value="300">Son 300 Mesaj</option>
+                  <option value="500" selected>Son 500 Mesaj (Önerilen)</option>
+                  <option value="1000">Son 1,000 Mesaj</option>
+                  <option value="2000">Son 2,000 Mesaj (Derin Tarama)</option>
+                </select>
+              </div>
+              <button type="submit" id="btnRunMoleScrape" class="btn" style="background:#38bdf8; color:#000; font-weight:700; padding:.65rem 1.2rem; border-radius:8px; font-size:.85rem; align-self:flex-end; height:40px">
+                🔎 Kazı & Eşleştir
+              </button>
+            </div>
+          </form>
+
+          <!-- Scraper Loading & Results -->
+          <div id="moleScrapeLoading" style="display:none; text-align:center; padding:2rem 1rem">
+            <div class="spin-icon" style="width:26px; height:26px; border-width:3px; margin:0 auto .5rem auto"></div>
+            <div style="font-size:.85rem; color:#38bdf8">Karşı gruptaki mesajlar ve tepkiler taranıyor, kendi üyelerinizle eşleştiriliyor...</div>
+          </div>
+
+          <div id="moleScrapeResultsArea" style="display:none; margin-top:1.2rem">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem">
+              <span style="font-size:.82rem; font-weight:700; color:#f87171" id="moleScrapeCountNotice">0 Ortak Şüpheli Bulundu</span>
+              <span style="font-size:.75rem; color:var(--text-muted)" id="moleScrapeStatsNotice"></span>
+            </div>
+            <div class="rules-table-wrap" style="max-height:350px; overflow-y:auto">
+              <table class="rules-table">
+                <thead>
+                  <tr>
+                    <th>Şüpheli Profil</th>
+                    <th>ID</th>
+                    <th>Karşı Gruptaki Faaliyeti</th>
+                    <th style="text-align:right">Eylem</th>
+                  </tr>
+                </thead>
+                <tbody id="moleScrapeTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- SAĞ KOLON: 2. AŞAMA - 10 DAKİKALIK CANLI TUZAK MESAJ DEDEKTİFİ -->
+        <div class="card" style="border-color:#ef4444">
+          <div class="card-title" style="display:flex; justify-content:space-between; align-items:center">
+            <span style="color:#f87171">⏱️ 2. Canlı Tuzak Mesaj Dedektifi (10 Dakika)</span>
+            <span class="badge" style="background:rgba(239,68,68,.2); color:#fca5a5; font-size:.7rem">Saniye Saniye Takip</span>
+          </div>
+          <p style="font-size:.78rem; color:var(--text-muted); margin-top:.25rem">
+            Kendi grubunuza mesaj attığınız andan itibaren 10 dakika boyunca kimin mesajı okuduğunu ve kimin çevrimiçi olduğunu saniye saniye takip eder. 10 saniye penceresindeki köstebeği doğrudan yakalar.
+          </p>
+
+          <form id="moleMonitorForm" onsubmit="startMoleMonitor(event)" style="display:flex; flex-direction:column; gap:.75rem; margin-top:1rem">
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Taramayı Yapacak Admin Hesap</label>
+              <select id="mole_monitor_acc_id" required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+                <option value="">Hesap seçin...</option>
+                {% for acc in accounts %}
+                <option value="{{ acc.id }}" {% if acc.id in active_client_ids %}style="color:#4ade80"{% endif %}>
+                  {{ acc.owner.display_name if acc.owner else '?' }} - {{ acc.name }} ({{ acc.phone }})
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div>
+              <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Bizim Grubumuz (Takip Edilecek Grup ID veya Link)</label>
+              <input type="text" id="mole_monitor_chat_id" placeholder="-100... veya https://t.me/..." required style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem">
+              <div>
+                <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Mesajı Atacak Hesap (ID veya @Kullanıcı Adı)</label>
+                <input type="text" id="mole_monitor_sender" placeholder="Boş bırakılırsa gruptaki sıradaki mesaj" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+              </div>
+              <div>
+                <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.25rem">Zaten Attıysanız Mesaj ID (Opsiyonel)</label>
+                <input type="text" id="mole_monitor_target_msg_id" placeholder="Örn: 48291 (Boşsa yeni mesaj beklenir)" style="width:100%; background:var(--surface2); border:1px solid var(--border); color:white; padding:.55rem; border-radius:8px; font-size:.82rem">
+              </div>
+            </div>
+
+            <button type="submit" id="btnStartMoleMonitor" class="btn" style="background:#ef4444; color:white; font-weight:700; padding:.7rem; border-radius:8px; font-size:.88rem; margin-top:.4rem">
+              🚀 10 Dakikalık Tuzak Takibini Başlat
+            </button>
+          </form>
+
+          <!-- CANLI TAKİP PANELİ -->
+          <div id="moleMonitorLiveArea" style="display:none; margin-top:1.2rem; border-top:1px solid var(--border); padding-top:1rem">
+            <!-- Üst Sayaç ve Kontrol -->
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(239,68,68,.1); border:1px solid #ef4444; padding:.6rem 1rem; border-radius:8px">
+              <div style="display:flex; align-items:center; gap:.6rem">
+                <span class="spin-icon" style="width:16px; height:16px; border-width:2px; border-color:#f87171 transparent transparent transparent"></span>
+                <span style="font-weight:700; color:#f87171; font-size:.88rem" id="moleMonitorTimerText">Kalan Süre: 10:00</span>
+              </div>
+              <button type="button" class="act-btn act-btn-danger" onclick="stopMoleMonitor()" style="font-size:.78rem">⏹️ Takibi Durdur</button>
+            </div>
+
+            <!-- Baş Şüpheliler Kutusu -->
+            <div style="margin-top:.8rem; background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.3); border-radius:8px; padding:.75rem">
+              <div style="font-size:.8rem; font-weight:700; color:var(--gold); display:flex; align-items:center; gap:.4rem">
+                ⚠️ İLK 10-15 SANİYEDE YAKALANAN BAŞ ŞÜPHELİLER
+              </div>
+              <p style="font-size:.74rem; color:var(--text-muted); margin-top:.2rem">
+                Mesaj atıldıktan sonraki ilk 10-15 saniyede mesajı okuyan veya online olan hesaplar:
+              </p>
+              <div id="moleCriticalSuspectsList" style="display:flex; flex-direction:column; gap:.4rem; margin-top:.5rem">
+                <div style="font-size:.75rem; color:var(--text-muted)">Henüz 15 saniye penceresinde tespit edilen şüpheli yok.</div>
+              </div>
+            </div>
+
+            <!-- Canlı Olay Akışı -->
+            <div style="margin-top:.8rem">
+              <div style="font-size:.8rem; font-weight:700; color:var(--text); margin-bottom:.4rem">
+                📜 Canlı Dedektif Akışı (Saniye Saniye)
+              </div>
+              <div id="moleLiveEventsFeed" style="max-height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:.35rem; background:var(--surface2); padding:.6rem; border-radius:8px; border:1px solid var(--border); font-family:monospace; font-size:.78rem">
+                <!-- Canlı olaylar buraya yazılacak -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
 
 <!-- ================================================================= -->
 <!-- MODALLAR (RENAME, MOVE, COPY, EDIT RULE)                          -->
@@ -1519,7 +1709,253 @@ document.addEventListener('DOMContentLoaded', () => {
   if (chks.length >= 2) {
     runTrackedGroupsComparison();
   }
-});
+// -------------------------------------------------------------
+// 🎯 OROSPU EVLADI AVI (KÖSTEBEK DEDEKTİFİ) JAVASCRIPT
+// -------------------------------------------------------------
+
+// 1. Karşı Grup Mesaj & Tepki Kazıyıcı
+async function runMoleScraper(e) {
+  e.preventDefault();
+  const accId = document.getElementById('mole_scrape_acc_id').value;
+  const ownChat = document.getElementById('mole_scrape_own_chat').value.trim();
+  const rivalChat = document.getElementById('mole_scrape_rival_chat').value.trim();
+  const limit = document.getElementById('mole_scrape_limit').value;
+  const btn = document.getElementById('btnRunMoleScrape');
+  const loading = document.getElementById('moleScrapeLoading');
+  const resultsArea = document.getElementById('moleScrapeResultsArea');
+  const tbody = document.getElementById('moleScrapeTableBody');
+  const countNotice = document.getElementById('moleScrapeCountNotice');
+  const statsNotice = document.getElementById('moleScrapeStatsNotice');
+
+  if (!accId || !ownChat || !rivalChat) {
+    alert('Lütfen tüm alanları doldurunuz.');
+    return;
+  }
+
+  btn.disabled = true;
+  loading.style.display = 'block';
+  resultsArea.style.display = 'none';
+
+  try {
+    const fd = new FormData();
+    fd.append('account_id', accId);
+    fd.append('own_chat_id', ownChat);
+    fd.append('rival_chat_id', rivalChat);
+    fd.append('limit', limit);
+
+    const resp = await fetch('/mole-hunt/scrape', { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    btn.disabled = false;
+    loading.style.display = 'none';
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'Tarama başarısız oldu.'));
+      return;
+    }
+
+    resultsArea.style.display = 'block';
+    countNotice.innerText = `${data.suspects_count} Ortak Şüpheli Bulundu!`;
+    statsNotice.innerText = `(Bizim Grup: ${data.own_total_members} üye | Karşı gruptan ${data.rival_messages_scanned} mesaj, ${data.rival_unique_senders} yazar, ${data.rival_unique_reactors} tepki veren tarandı)`;
+
+    tbody.innerHTML = '';
+    if (!data.suspects || data.suspects.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="4" style="text-align:center; color:var(--text-muted); padding:2rem">
+            Karşı grupta mesaj atan veya tepki veren kişiler arasında bizim grubumuzda üye olan kimse tespit edilemedi.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    data.suspects.forEach(s => {
+      const tr = document.createElement('tr');
+      let actBadges = '';
+      if (s.msg_count > 0) {
+        actBadges += `<span class="badge" style="background:rgba(239,68,68,.2); color:#fca5a5; margin-right:.3rem">🔴 ${s.msg_count} Mesaj Paylaştı</span>`;
+      }
+      if (s.reaction_count > 0) {
+        actBadges += `<span class="badge badge-gold">🔥 ${s.reaction_count} Tepki Bıraktı</span>`;
+      }
+
+      tr.innerHTML = `
+        <td>
+          <b>${s.name}</b><br>
+          <span style="font-size:.72rem; color:var(--text-muted)">${s.username ? '@' + s.username : 'Kullanıcı adı yok'}</span>
+          ${s.phone ? `<span style="font-size:.72rem; color:#93c5fd; margin-left:.3rem">(${s.phone})</span>` : ''}
+        </td>
+        <td><code>${s.user_id}</code></td>
+        <td>
+          <div style="display:flex; flex-wrap:wrap; gap:.25rem; align-items:center">
+            ${actBadges}
+          </div>
+          ${s.last_msg_date ? `<div style="font-size:.7rem; color:var(--text-muted); margin-top:.2rem">Son Mesaj: ${s.last_msg_date}</div>` : ''}
+        </td>
+        <td style="text-align:right">
+          <div style="display:inline-flex; gap:.3rem">
+            <button type="button" class="act-btn act-btn-danger" onclick="kickMember(${accId}, '${ownChat}', ${s.user_id}, '${data.own_title || 'Bizim Grup'}')">
+              🚫 Gruptan At
+            </button>
+            <button type="button" class="act-btn act-btn-gold" onclick="quickIgnoreUser('${s.user_id}', '${s.name.replace(/'/g, "\\'")}')">
+              🚫 Yoksay
+            </button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+  } catch(err) {
+    btn.disabled = false;
+    loading.style.display = 'none';
+    alert('Sunucu hatası: ' + err.message);
+  }
+}
+
+// 2. Canlı 10 Dakikalık Tuzak Mesaj Takipçisi
+let currentMoleSessionId = null;
+let molePollInterval = null;
+
+async function startMoleMonitor(e) {
+  e.preventDefault();
+  const accId = document.getElementById('mole_monitor_acc_id').value;
+  const chatId = document.getElementById('mole_monitor_chat_id').value.trim();
+  const sender = document.getElementById('mole_monitor_sender').value.trim();
+  const targetMsgId = document.getElementById('mole_monitor_target_msg_id').value.trim();
+  const btn = document.getElementById('btnStartMoleMonitor');
+
+  if (!accId || !chatId) {
+    alert('Lütfen hesap ve grup ID/linki giriniz.');
+    return;
+  }
+
+  btn.disabled = true;
+
+  try {
+    const fd = new FormData();
+    fd.append('account_id', accId);
+    fd.append('chat_id', chatId);
+    if (sender) fd.append('sender_identifier', sender);
+    if (targetMsgId) fd.append('target_msg_id', targetMsgId);
+
+    const resp = await fetch('/mole-hunt/start-monitor', { method: 'POST', body: fd });
+    const data = await resp.json();
+
+    btn.disabled = false;
+
+    if (!resp.ok || !data.ok) {
+      alert('Hata: ' + (data.error || 'Takip başlatılamadı.'));
+      return;
+    }
+
+    currentMoleSessionId = data.session_id;
+    document.getElementById('moleMonitorLiveArea').style.display = 'block';
+    document.getElementById('moleLiveEventsFeed').innerHTML = '';
+    document.getElementById('moleCriticalSuspectsList').innerHTML = '<div style="font-size:.75rem; color:var(--text-muted)">Dinleme başladı, ilk 10-15 saniyedeki hareketler bekleniyor...</div>';
+
+    if (molePollInterval) clearInterval(molePollInterval);
+    molePollInterval = setInterval(pollMoleSessionStatus, 2000);
+    pollMoleSessionStatus();
+
+  } catch(err) {
+    btn.disabled = false;
+    alert('Hata: ' + err.message);
+  }
+}
+
+async function pollMoleSessionStatus() {
+  if (!currentMoleSessionId) return;
+
+  try {
+    const resp = await fetch(`/mole-hunt/session/${currentMoleSessionId}`);
+    const data = await resp.json();
+
+    if (!resp.ok || !data.ok) return;
+
+    const rem = data.remaining_seconds || 0;
+    const mins = String(Math.floor(rem / 60)).padStart(2, '0');
+    const secs = String(rem % 60).padStart(2, '0');
+    const timerEl = document.getElementById('moleMonitorTimerText');
+
+    if (data.status === 'waiting') {
+      timerEl.innerHTML = `⏳ Mesaj Bekleniyor (${data.chat_title || ''})`;
+    } else if (data.status === 'monitoring') {
+      timerEl.innerHTML = `🔴 Canlı Takip: ${mins}:${secs} kaldı (Mesaj ID: ${data.msg_id || '—'})`;
+    } else if (data.status === 'completed') {
+      timerEl.innerHTML = `🏁 Takip Tamamlandı (10 Dk Bitti)`;
+      if (molePollInterval) clearInterval(molePollInterval);
+    } else if (data.status === 'stopped') {
+      timerEl.innerHTML = `⏹️ Takip Durduruldu`;
+      if (molePollInterval) clearInterval(molePollInterval);
+    } else if (data.status === 'error') {
+      timerEl.innerHTML = `❌ Hata: ${data.error || 'Bilinmeyen hata'}`;
+      if (molePollInterval) clearInterval(molePollInterval);
+    }
+
+    // Baş Şüpheliler (İlk 15 saniyede yakalananlar)
+    const critContainer = document.getElementById('moleCriticalSuspectsList');
+    if (data.critical_suspects && data.critical_suspects.length > 0) {
+      critContainer.innerHTML = '';
+      data.critical_suspects.forEach(cs => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:rgba(239,68,68,.15); border:1px solid #ef4444; border-radius:6px; padding:.4rem .7rem';
+        item.innerHTML = `
+          <div>
+            <b style="color:#f87171">${cs.name}</b>
+            <span style="font-size:.75rem; color:#cbd5e1">${cs.username ? '@' + cs.username : ''}</span>
+            <code style="font-size:.7rem; margin-left:.3rem">${cs.user_id}</code>
+            <span class="badge" style="background:#ef4444; color:white; font-size:.65rem; margin-left:.5rem">${cs.reason}</span>
+          </div>
+          <div>
+            <button type="button" class="act-btn act-btn-danger" style="font-size:.72rem" onclick="kickMember(document.getElementById('mole_monitor_acc_id').value, document.getElementById('mole_monitor_chat_id').value, ${cs.user_id}, 'Bizim Grup')">
+              🚫 Gruptan At
+            </button>
+          </div>
+        `;
+        critContainer.appendChild(item);
+      });
+    }
+
+    // Canlı Feed
+    const feed = document.getElementById('moleLiveEventsFeed');
+    if (data.events && data.events.length > 0) {
+      feed.innerHTML = '';
+      data.events.slice().reverse().forEach(ev => {
+        const line = document.createElement('div');
+        line.style.cssText = 'padding:.2rem .3rem; border-bottom:1px solid rgba(255,255,255,.04); display:flex; justify-content:space-between; align-items:center';
+        
+        let color = '#cbd5e1';
+        if (ev.is_critical) color = '#f87171; font-weight:bold';
+        else if (ev.type === 'read') color = '#38bdf8';
+        else if (ev.type === 'online') color = '#4ade80';
+
+        line.innerHTML = `
+          <span style="color:${color}">[${ev.time}] ${ev.text}</span>
+          ${ev.user_id ? `<button type="button" class="act-btn act-btn-danger" style="font-size:.65rem; padding:.15rem .4rem" onclick="kickMember(document.getElementById('mole_monitor_acc_id').value, document.getElementById('mole_monitor_chat_id').value, ${ev.user_id}, 'Bizim Grup')">Gruptan At</button>` : ''}
+        `;
+        feed.appendChild(line);
+      });
+    }
+
+  } catch(e) {
+    console.error('Mole session polling error:', e);
+  }
+}
+
+async function stopMoleMonitor() {
+  if (!currentMoleSessionId) return;
+  try {
+    const fd = new FormData();
+    fd.append('session_id', currentMoleSessionId);
+    await fetch('/mole-hunt/stop-monitor', { method: 'POST', body: fd });
+    if (molePollInterval) clearInterval(molePollInterval);
+    pollMoleSessionStatus();
+  } catch(e) {
+    alert('Hata: ' + e.message);
+  }
+}
 </script>
 </body>
 </html>

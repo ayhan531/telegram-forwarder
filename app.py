@@ -3223,6 +3223,481 @@ async def delete_ignored_member(
     ref = request.headers.get("referer", "/hukumdar")
     return RedirectResponse(url=ref, status_code=303)
 
+# ── OROSPU EVLADI AVI (KÖSTEBEK DEDEKTİFİ & CANLI TUZAK TAKİPÇİSİ) ──
+
+_active_mole_monitors = {}
+
+async def scrape_rival_group_senders_and_reactions(client: TelegramClient, rival_entity, limit: int = 500):
+    """
+    Kopya/karşı gruptaki son `limit` mesajı tarar.
+    Mesaj atan kişileri ve mesajlara tepki bırakan kişileri toplar.
+    """
+    senders = {}
+    reactors = {}
+    msg_scanned = 0
+
+    try:
+        async for msg in client.iter_messages(rival_entity, limit=limit):
+            msg_scanned += 1
+            sender = getattr(msg, "sender", None)
+            sender_id = getattr(msg, "sender_id", None)
+            if sender_id and isinstance(sender_id, int) and sender_id > 0:
+                if sender_id not in senders:
+                    first = getattr(sender, "first_name", "") or ""
+                    last = getattr(sender, "last_name", "") or ""
+                    u_name = f"{first} {last}".strip() or "İsimsiz"
+                    u_uname = getattr(sender, "username", "") or ""
+                    u_phone = getattr(sender, "phone", "") or ""
+                    senders[sender_id] = {
+                        "user_id": sender_id,
+                        "name": u_name,
+                        "username": u_uname,
+                        "phone": f"+{u_phone}" if u_phone else "",
+                        "msg_count": 1,
+                        "last_msg_date": msg.date.strftime("%Y-%m-%d %H:%M:%S") if getattr(msg, 'date', None) else ""
+                    }
+                else:
+                    senders[sender_id]["msg_count"] += 1
+
+            # Reactions (Tepkileri kazı)
+            if getattr(msg, "reactions", None) and getattr(msg.reactions, "results", None):
+                try:
+                    res = await client(functions.messages.GetMessageReactionsListRequest(
+                        peer=rival_entity,
+                        id=msg.id,
+                        limit=100
+                    ))
+                    for u in getattr(res, "users", []):
+                        if u.id not in reactors:
+                            first = getattr(u, "first_name", "") or ""
+                            last = getattr(u, "last_name", "") or ""
+                            u_name = f"{first} {last}".strip() or "İsimsiz"
+                            u_uname = getattr(u, "username", "") or ""
+                            u_phone = getattr(u, "phone", "") or ""
+                            reactors[u.id] = {
+                                "user_id": u.id,
+                                "name": u_name,
+                                "username": u_uname,
+                                "phone": f"+{u_phone}" if u_phone else "",
+                                "reaction_count": 1
+                            }
+                        else:
+                            reactors[u.id]["reaction_count"] += 1
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[MoleScrape] iter_messages hatası: {e}")
+        raise e
+
+    return senders, reactors, msg_scanned
+
+
+@app.post("/mole-hunt/scrape")
+async def mole_hunt_scrape(
+    request: Request,
+    account_id: int = Form(...),
+    own_chat_id: str = Form(...),
+    rival_chat_id: str = Form(...),
+    limit: int = Form(500),
+    db: Session = Depends(get_db)
+):
+    """
+    Kendi grubumuzun tam üye listesini çeker, karşı kopyacı grupta mesaj atan
+    ve emoji tepkisi bırakan kişileri kazır ve ikisinin kesişimindeki şüphelileri listeler.
+    """
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    if account_id not in clients:
+        return JSONResponse({"error": "Seçilen hesap şu an aktif değil."}, status_code=400)
+
+    client: TelegramClient = clients[account_id]
+
+    # 1. Kendi grubumuzu çöz ve tüm üyelerini çek
+    try:
+        own_entity, own_title, _ = await asyncio.wait_for(
+            resolve_and_fetch_group_info(client, own_chat_id),
+            timeout=30
+        )
+        own_participants = await asyncio.wait_for(
+            scrape_group_participants(client, own_entity),
+            timeout=120
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Kendi grubunuz taranamadı: {e}"}, status_code=400)
+
+    own_members_map = {p["user_id"]: p for p in own_participants}
+
+    # 2. Karşı grubu çöz ve son mesajları kazı
+    try:
+        rival_entity, rival_title, _ = await asyncio.wait_for(
+            resolve_and_fetch_group_info(client, rival_chat_id),
+            timeout=30
+        )
+        senders, reactors, msg_scanned = await asyncio.wait_for(
+            scrape_rival_group_senders_and_reactions(client, rival_entity, limit=min(limit, 2000)),
+            timeout=150
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"Karşı grup taranamadı: {e}"}, status_code=400)
+
+    # 3. Kesişim: Karşı grupta faaliyeti olan ve bizim grupta üye olanlar
+    suspects = []
+    all_rival_user_ids = set(senders.keys()).union(set(reactors.keys()))
+
+    for uid in all_rival_user_ids:
+        if uid in own_members_map:
+            own_info = own_members_map[uid]
+            s_info = senders.get(uid, {})
+            r_info = reactors.get(uid, {})
+            m_count = s_info.get("msg_count", 0)
+            r_count = r_info.get("reaction_count", 0)
+            suspects.append({
+                "user_id": uid,
+                "name": own_info["name"],
+                "username": own_info["username"],
+                "phone": own_info["phone"],
+                "msg_count": m_count,
+                "last_msg_date": s_info.get("last_msg_date", ""),
+                "reaction_count": r_count,
+                "total_activity": m_count * 3 + r_count
+            })
+
+    suspects.sort(key=lambda x: x["total_activity"], reverse=True)
+
+    return JSONResponse({
+        "ok": True,
+        "own_title": own_title,
+        "own_total_members": len(own_participants),
+        "rival_title": rival_title,
+        "rival_messages_scanned": msg_scanned,
+        "rival_unique_senders": len(senders),
+        "rival_unique_reactors": len(reactors),
+        "suspects_count": len(suspects),
+        "suspects": suspects
+    })
+
+
+async def run_mole_canary_monitor(session_id: str):
+    """
+    10 dakika boyunca belirtilen mesajın okundu bilgilerini ve
+    grupta çevrimiçi olan kişileri saniye saniye takip eder.
+    """
+    session = _active_mole_monitors.get(session_id)
+    if not session:
+        return
+
+    account_id = session["account_id"]
+    client = clients.get(account_id)
+    if not client:
+        session["status"] = "error"
+        session["error"] = "Telegram hesabı bağlı değil."
+        return
+
+    chat_input = session["chat_id"]
+    try:
+        chat_entity, chat_title, _ = await resolve_and_fetch_group_info(client, chat_input)
+        session["chat_title"] = chat_title
+    except Exception as e:
+        session["status"] = "error"
+        session["error"] = f"Grup çözülemedi: {e}"
+        return
+
+    target_sender = (session["sender_identifier"] or "").strip().lower().lstrip("@")
+    target_msg_id = session.get("target_msg_id")
+
+    # 1. Aşama: Mesajı yakala / bekle (varsa target_msg_id kullan, yoksa bekle)
+    if not target_msg_id:
+        session["status"] = "waiting"
+        session["events"].append({
+            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+            "elapsed": 0,
+            "type": "info",
+            "text": "⏳ Tuzak mesajı bekleniyor... Lütfen grupta mesajınızı gönderin.",
+            "is_critical": False
+        })
+
+        wait_start = datetime.datetime.utcnow()
+        while (datetime.datetime.utcnow() - wait_start).total_seconds() < 180:
+            if session.get("is_cancelled"):
+                session["status"] = "stopped"
+                return
+
+            try:
+                # Son 5 mesajı kontrol et
+                async for msg in client.iter_messages(chat_entity, limit=5):
+                    if not getattr(msg, "id", None):
+                        continue
+                    sender = getattr(msg, "sender", None)
+                    s_id = str(getattr(msg, "sender_id", "") or "")
+                    s_uname = (getattr(sender, "username", "") or "").lower()
+
+                    is_match = False
+                    if not target_sender:
+                        is_match = True
+                    elif target_sender in s_id or target_sender == s_uname:
+                        is_match = True
+
+                    if is_match and msg.date:
+                        msg_dt = msg.date.replace(tzinfo=None)
+                        if (datetime.datetime.utcnow() - msg_dt).total_seconds() < 120:
+                            target_msg_id = msg.id
+                            session["msg_id"] = msg.id
+                            session["msg_text"] = (getattr(msg, "text", "") or "")[:60]
+                            break
+            except Exception:
+                pass
+
+            if target_msg_id:
+                break
+            await asyncio.sleep(2)
+
+        if not target_msg_id:
+            session["status"] = "error"
+            session["error"] = "3 dakika içinde belirtilen hesaptan yeni mesaj tespit edilemedi."
+            return
+
+    # 2. Aşama: 10 Dakikalık Canlı Takip Başlıyor
+    session["status"] = "monitoring"
+    session["msg_id"] = target_msg_id
+    start_time = datetime.datetime.utcnow()
+    session["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
+    duration = session["duration_seconds"]
+
+    session["events"].append({
+        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+        "elapsed": 0,
+        "type": "msg_detected",
+        "text": f"📩 Tuzak mesajı takibe alındı! (Mesaj ID: {target_msg_id}) — 10 dakikalık kronometre başladı.",
+        "is_critical": True
+    })
+
+    read_support_checked = False
+    has_read_support = True
+
+    while (datetime.datetime.utcnow() - start_time).total_seconds() < duration:
+        if session.get("is_cancelled"):
+            session["status"] = "stopped"
+            session["events"].append({
+                "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                "elapsed": session["elapsed_seconds"],
+                "type": "info",
+                "text": "⏹️ Takip kullanıcı tarafından durduruldu.",
+                "is_critical": False
+            })
+            return
+
+        now_utc = datetime.datetime.utcnow()
+        elapsed = int((now_utc - start_time).total_seconds())
+        session["elapsed_seconds"] = elapsed
+        session["remaining_seconds"] = max(0, duration - elapsed)
+
+        # 1. Okundu bilgisini sorgula
+        if has_read_support:
+            try:
+                read_res = await client(functions.messages.GetMessageReadParticipantsRequest(
+                    peer=chat_entity,
+                    msg_id=target_msg_id
+                ))
+                for item in read_res:
+                    uid = item.user_id
+                    if uid not in session["readers"]:
+                        session["readers"].add(uid)
+                        r_date = item.date.replace(tzinfo=None)
+                        read_elapsed = max(0, int((r_date - start_time).total_seconds()))
+                        is_crit = read_elapsed <= 15
+
+                        u_name = f"Kullanıcı #{uid}"
+                        u_uname = ""
+                        try:
+                            u_entity = await client.get_entity(uid)
+                            first = getattr(u_entity, "first_name", "") or ""
+                            last = getattr(u_entity, "last_name", "") or ""
+                            u_name = f"{first} {last}".strip() or u_name
+                            u_uname = getattr(u_entity, "username", "") or ""
+                        except Exception:
+                            pass
+
+                        time_str = datetime.datetime.now().strftime("%H:%M:%S")
+                        crit_tag = " ⚠️ [KRİTİK 10-15 SN PENCERESİ - BAŞ ŞÜPHELİ!]" if is_crit else ""
+                        session["events"].append({
+                            "time": time_str,
+                            "elapsed": read_elapsed,
+                            "type": "read",
+                            "user_id": uid,
+                            "name": u_name,
+                            "username": u_uname,
+                            "is_critical": is_crit,
+                            "text": f"👁️ {u_name} {('@' + u_uname) if u_uname else ''} — MESAJI OKUDU (+{read_elapsed}. sn){crit_tag}"
+                        })
+
+                        if is_crit and uid not in session["critical_suspects"]:
+                            session["critical_suspects"][uid] = {
+                                "user_id": uid,
+                                "name": u_name,
+                                "username": u_uname,
+                                "read_elapsed": read_elapsed,
+                                "online_elapsed": None,
+                                "reason": f"{read_elapsed}. saniyede okudu"
+                            }
+            except Exception:
+                if not read_support_checked:
+                    read_support_checked = True
+                    has_read_support = False
+                    session["events"].append({
+                        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                        "elapsed": elapsed,
+                        "type": "info",
+                        "text": f"ℹ️ Bu grup türünde Telegram okundu sorgusu desteklenmiyor (Çevrimiçi dedektifi kesintisiz devam ediyor).",
+                        "is_critical": False
+                    })
+
+        # 2. Grupta anlık kimler Online?
+        try:
+            async for member in client.iter_participants(chat_entity):
+                uid = member.id
+                status = getattr(member, "status", None)
+                if isinstance(status, types.UserStatusOnline):
+                    if uid not in session["online_users"]:
+                        session["online_users"].add(uid)
+                        is_crit = elapsed <= 15
+                        first = getattr(member, "first_name", "") or ""
+                        last = getattr(member, "last_name", "") or ""
+                        u_name = f"{first} {last}".strip() or f"Kullanıcı #{uid}"
+                        u_uname = getattr(member, "username", "") or ""
+
+                        time_str = datetime.datetime.now().strftime("%H:%M:%S")
+                        crit_tag = " ⚠️ [KRİTİK 10-15 SN - ÇEVRİMİÇİ OLDU]" if is_crit else ""
+                        session["events"].append({
+                            "time": time_str,
+                            "elapsed": elapsed,
+                            "type": "online",
+                            "user_id": uid,
+                            "name": u_name,
+                            "username": u_uname,
+                            "is_critical": is_crit,
+                            "text": f"🟢 {u_name} {('@' + u_uname) if u_uname else ''} — ÇEVRİMİÇİ OLDU (+{elapsed}. sn){crit_tag}"
+                        })
+
+                        if is_crit:
+                            if uid not in session["critical_suspects"]:
+                                session["critical_suspects"][uid] = {
+                                    "user_id": uid,
+                                    "name": u_name,
+                                    "username": u_uname,
+                                    "read_elapsed": None,
+                                    "online_elapsed": elapsed,
+                                    "reason": f"{elapsed}. saniyede çevrimiçi oldu"
+                                }
+                            elif not session["critical_suspects"][uid].get("online_elapsed"):
+                                session["critical_suspects"][uid]["online_elapsed"] = elapsed
+        except Exception:
+            pass
+
+        await asyncio.sleep(2.5)
+
+    session["status"] = "completed"
+    session["events"].append({
+        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+        "elapsed": duration,
+        "type": "info",
+        "text": "🏁 10 Dakikalık tuzak takip süresi tamamlandı. Tüm veriler toplandı.",
+        "is_critical": False
+    })
+
+
+@app.post("/mole-hunt/start-monitor")
+async def mole_hunt_start_monitor(
+    request: Request,
+    account_id: int = Form(...),
+    chat_id: str = Form(...),
+    sender_identifier: str = Form(None),
+    target_msg_id: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """10 dakikalık canlı tuzak mesaj takip oturumu başlatır."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    if account_id not in clients:
+        return JSONResponse({"error": "Seçilen hesap aktif değil."}, status_code=400)
+
+    clean_msg_id = None
+    if target_msg_id and target_msg_id.strip().isdigit():
+        clean_msg_id = int(target_msg_id.strip())
+
+    session_id = str(uuid.uuid4())[:8]
+    _active_mole_monitors[session_id] = {
+        "id": session_id,
+        "account_id": account_id,
+        "chat_id": chat_id.strip(),
+        "chat_title": chat_id.strip(),
+        "sender_identifier": (sender_identifier or "").strip(),
+        "target_msg_id": clean_msg_id,
+        "status": "waiting" if not clean_msg_id else "monitoring",
+        "error": None,
+        "msg_id": clean_msg_id,
+        "msg_text": None,
+        "start_time": None,
+        "duration_seconds": 600,
+        "elapsed_seconds": 0,
+        "remaining_seconds": 600,
+        "events": [],
+        "readers": set(),
+        "online_users": set(),
+        "critical_suspects": {},
+        "is_cancelled": False
+    }
+
+    asyncio.create_task(run_mole_canary_monitor(session_id))
+
+    return JSONResponse({"ok": True, "session_id": session_id})
+
+
+@app.get("/mole-hunt/session/{session_id}")
+async def mole_hunt_get_session(
+    session_id: str,
+    request: Request
+):
+    """Canlı takip oturumunun anlık durumunu döner."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    session = _active_mole_monitors.get(session_id)
+    if not session:
+        return JSONResponse({"error": "Oturum bulunamadı"}, status_code=404)
+
+    return JSONResponse({
+        "ok": True,
+        "id": session["id"],
+        "status": session["status"],
+        "error": session.get("error"),
+        "msg_id": session.get("msg_id"),
+        "chat_title": session.get("chat_title"),
+        "elapsed_seconds": session.get("elapsed_seconds", 0),
+        "remaining_seconds": session.get("remaining_seconds", 600),
+        "events_count": len(session.get("events", [])),
+        "events": session.get("events", []),
+        "critical_suspects": list(session.get("critical_suspects", {}).values())
+    })
+
+
+@app.post("/mole-hunt/stop-monitor")
+async def mole_hunt_stop_monitor(
+    request: Request,
+    session_id: str = Form(...)
+):
+    """Aktif takip oturumunu durdurur."""
+    if not check_hukumdar_auth(request):
+        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=403)
+
+    session = _active_mole_monitors.get(session_id)
+    if session:
+        session["is_cancelled"] = True
+        session["status"] = "stopped"
+
+    return JSONResponse({"ok": True})
+
 
 # ── TOPLU SİLME & KONTROL ENDPOINTLERİ ──
 
