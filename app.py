@@ -492,38 +492,62 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
         try:
             # --- HOCA EMOJISI (TEACHERS) ---
             def _norm_id(v):
+                if v is None:
+                    return ""
                 s = str(v).strip()
                 if s.startswith('-100'): return s[4:]
                 return s.lstrip('-')
 
+            is_channel_post = getattr(event.message, 'post', False) or (getattr(event, 'is_channel', False) and not getattr(event, 'is_group', False))
+            norm_chat = _norm_id(chat_id)
+            norm_sender = _norm_id(sender_id) if sender_id else norm_chat
+
             teachers = db.query(Teacher).all()
             matched_teacher = None
             for t in teachers:
-                if _norm_id(t.source_chat_id) == _norm_id(chat_id) and str(t.teacher_user_id) == str(sender_id):
-                    matched_teacher = t
-                    # Bu hocanın reaction ayarlarından BU hesap için olanı bul
-                    react_config = db.query(TeacherReaction).filter(
-                        TeacherReaction.teacher_id == t.id,
-                        TeacherReaction.account_id == account.id
-                    ).first()
-                    if react_config and react_config.emojis:
-                        grouped_id = event.message.grouped_id
-                        should_react = True
-                        if grouped_id:
-                            cache_key = (account.id, grouped_id)
-                            now = time.time()
-                            if cache_key in _processed_albums and now - _processed_albums[cache_key] < 300:
-                                should_react = False
-                            else:
-                                _processed_albums[cache_key] = now
-                                # Cleanup old cache
-                                keys_to_delete = [k for k, v in _processed_albums.items() if now - v > 300]
-                                for k in keys_to_delete:
-                                    del _processed_albums[k]
-                        
-                        if should_react:
-                            print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak. (grouped_id={grouped_id})")
-                            asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
+                norm_source = _norm_id(t.source_chat_id)
+                if norm_source == norm_chat:
+                    t_uid = _norm_id(t.teacher_user_id)
+                    # Eşleşme kontrolleri:
+                    # 1. Hoca ID mesajı gönderen ile eşleşiyorsa
+                    # 2. Hoca ID kaynak chat ID ile aynı girilmişse (Borsa Komutanı örneği)
+                    # 3. Kanal yayını (broadcast post) ise (kanallarda mesajlar kanala aittir, şahsi ID girilse bile hoca mesajıdır)
+                    # 4. Hoca ID boş, 0 veya '*' ise (sohbetteki tüm mesajları hoca kabul et)
+                    is_match = False
+                    if t_uid == norm_sender:
+                        is_match = True
+                    elif t_uid == norm_source:
+                        is_match = True
+                    elif t_uid in ("", "0", "*", "hepsi", "all", "kanal"):
+                        is_match = True
+                    elif is_channel_post:
+                        is_match = True
+
+                    if is_match:
+                        matched_teacher = t
+                        # Bu hocanın reaction ayarlarından BU hesap için olanı bul
+                        react_config = db.query(TeacherReaction).filter(
+                            TeacherReaction.teacher_id == t.id,
+                            TeacherReaction.account_id == account.id
+                        ).first()
+                        if react_config and react_config.emojis:
+                            grouped_id = event.message.grouped_id
+                            should_react = True
+                            if grouped_id:
+                                cache_key = (account.id, grouped_id)
+                                now = time.time()
+                                if cache_key in _processed_albums and now - _processed_albums[cache_key] < 300:
+                                    should_react = False
+                                else:
+                                    _processed_albums[cache_key] = now
+                                    # Cleanup old cache
+                                    keys_to_delete = [k for k, v in _processed_albums.items() if now - v > 300]
+                                    for k in keys_to_delete:
+                                        del _processed_albums[k]
+                            
+                            if should_react:
+                                print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak. (hoca='{t.name}', grouped_id={grouped_id})")
+                                asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
 
             rules = db.query(Rule).filter(
                 Rule.source_chat_id == chat_id,
@@ -533,25 +557,6 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
 
             for rule in rules:
                 if rule.sender_id and rule.sender_id != sender_id:
-                    continue
-
-                # ── Global içerik filtreleri (tüm kurallar için geçerli) ──
-                _raw_text = event.message.message or ""
-
-                # 1. @ mention içeren mesajları engelle (@kullanici gibi)
-                if '@' in _raw_text:
-                    print(f"[{account.name}] 🚫 @ mention içeriği engellendi (msg={event.id})")
-                    continue
-
-                # 2. t.me/ linki içeren mesajları engelle
-                if re.search(r't\.me/', _raw_text, re.IGNORECASE):
-                    print(f"[{account.name}] 🚫 t.me linki engellendi (msg={event.id})")
-                    continue
-
-                # 3. Sadece #reklam içeren mesajları engelle
-                #    (#AKFIS, #BTC gibi hisse/kripto kodları ETKİLENMEZ)
-                if re.search(r'#[Rr][Ee][Kk][Ll][Aa][Mm]\b', _raw_text):
-                    print(f"[{account.name}] 🚫 #reklam içeriği engellendi (msg={event.id})")
                     continue
 
                 # ── Yanıt (reply) eşleştirmesi ──
@@ -2085,15 +2090,55 @@ async def delayed_react(account_id, chat_id, msg_id, emojis_str, delay_max_minut
         print(f"[Emoji Task] Hesap {account_id} aktif değil, emoji atılamadı.")
         return
     
+    target_peer = int(chat_id) if str(chat_id).lstrip('-').isdigit() else chat_id
+
     try:
         from telethon import functions, types
         await client(functions.messages.SendReactionRequest(
-            peer=chat_id,
+            peer=target_peer,
             msg_id=msg_id,
             reaction=[types.ReactionEmoji(emoticon=chosen)]
         ))
         print(f"[Emoji Task] ✅ {chosen} emojisi atıldı! (Hesap {account_id}, msg={msg_id})")
     except Exception as e:
+        err_msg = str(e)
+        if "reactions_uniq_max" in err_msg:
+            # Telegram'da bir mesajdaki farklı emoji türü limiti (genelde 11) dolmuş.
+            # Yeni bir emoji eklenemez ama mesajda ZATEN MEVCUT OLAN emojilere basılabilir.
+            try:
+                msgs = await client.get_messages(target_peer, ids=msg_id)
+                msg_obj = msgs if not isinstance(msgs, list) else (msgs[0] if msgs else None)
+                existing_emojis = []
+                if msg_obj and getattr(msg_obj, 'reactions', None) and getattr(msg_obj.reactions, 'results', None):
+                    for r in msg_obj.reactions.results:
+                        if hasattr(r, 'reaction') and hasattr(r.reaction, 'emoticon'):
+                            existing_emojis.append(r.reaction.emoticon)
+                
+                # 1. Öncelik: Bu hesabın izin verilen emoji listesinden mesajda zaten var olan birini seç
+                fallback_emoji = None
+                for cand in emoji_list:
+                    cand_clean = cand
+                    for m in ['\U0001f3fb', '\U0001f3fc', '\U0001f3fd', '\U0001f3fe', '\U0001f3ff']:
+                        cand_clean = cand_clean.replace(m, '')
+                    if cand_clean in existing_emojis:
+                        fallback_emoji = cand_clean
+                        break
+                
+                # 2. Öncelik: Hesabın listesindekiler mesajda hiç yoksa, mesajdaki en popüler mevcut emojiyi kullan
+                if not fallback_emoji and existing_emojis:
+                    fallback_emoji = existing_emojis[0]
+                
+                if fallback_emoji:
+                    await client(functions.messages.SendReactionRequest(
+                        peer=target_peer,
+                        msg_id=msg_id,
+                        reaction=[types.ReactionEmoji(emoticon=fallback_emoji)]
+                    ))
+                    print(f"[Emoji Task] ✅ {fallback_emoji} emojisi atıldı (uniq_max sınırı nedeniyle mevcut emojilerden seçildi)! (Hesap {account_id}, msg={msg_id})")
+                    return
+            except Exception as retry_e:
+                print(f"[Emoji Task] ⚠️ uniq_max kurtarma denemesi başarısız (Hesap {account_id}): {retry_e}")
+
         print(f"[Emoji Task] ❌ Emoji atılamadı (Hesap {account_id}): {e}")
 
 
@@ -2130,6 +2175,29 @@ async def add_teacher(
     )
     db.add(teacher)
     db.commit()
+    return RedirectResponse(url="/teachers", status_code=303)
+
+@app.post("/teachers/edit/{t_id}")
+async def edit_teacher(
+    request: Request,
+    t_id: int,
+    name: str = Form(...),
+    source_chat_id: str = Form(...),
+    teacher_user_id: str = Form(...),
+    delay_max_minutes: int = Form(1),
+    db: Session = Depends(get_db)
+):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    t = db.query(Teacher).filter(Teacher.id == t_id).first()
+    if t:
+        t.name = name
+        t.source_chat_id = source_chat_id
+        t.teacher_user_id = teacher_user_id
+        t.delay_max_minutes = delay_max_minutes
+        db.commit()
     return RedirectResponse(url="/teachers", status_code=303)
 
 @app.post("/teachers/delete/{t_id}")

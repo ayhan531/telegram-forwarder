@@ -66,8 +66,8 @@
           <input class="row-input" type="text" name="source_chat_id" placeholder="-100..." required>
         </div>
         <div class="field" style="margin:0">
-          <label>Hocanın Kendi ID'si</label>
-          <input class="row-input" type="text" name="teacher_user_id" placeholder="12345678" required>
+          <label>Hocanın Kendi ID'si <small style="color:var(--muted);font-weight:normal">(Kanal ise Kanal ID veya 0)</small></label>
+          <input class="row-input" type="text" name="teacher_user_id" placeholder="12345678 (Kanal ise Kanal ID veya 0)" required>
         </div>
         <div class="field" style="margin:0">
           <label>Gecikme (Max Dk)</label>
@@ -87,8 +87,36 @@
           <h2 style="margin:0;font-size:1.1rem;color:var(--text)">{{ teacher.name }}</h2>
           <div style="font-size:.8rem;color:var(--muted);margin-top:.2rem">Grup: {{ teacher.source_chat_id }} • Hoca ID: {{ teacher.teacher_user_id }} • Süre: 1sn - {{ teacher.delay_max_minutes }}dk</div>
         </div>
-        <button class="btn btn-secondary" style="color:var(--danger);border-color:rgba(239,68,68,.3)" onclick="deleteTeacher({{ teacher.id }})">Hocayı Sil</button>
+        <div style="display:flex;gap:.5rem">
+          <button class="btn btn-secondary" style="font-size:.8rem;padding:.35rem .7rem" onclick="toggleEditTeacher({{ teacher.id }})">✏️ Düzenle</button>
+          <button class="btn btn-secondary" style="color:var(--danger);border-color:rgba(239,68,68,.3);font-size:.8rem;padding:.35rem .7rem" onclick="deleteTeacher({{ teacher.id }})">Hocayı Sil</button>
+        </div>
       </div>
+
+      <!-- DÜZENLEME FORMU -->
+      <form id="edit-form-{{ teacher.id }}" action="/teachers/edit/{{ teacher.id }}" method="POST" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.8rem;align-items:end">
+          <div class="field" style="margin:0">
+            <label style="font-size:.75rem">Hoca Adı</label>
+            <input class="row-input" type="text" name="name" value="{{ teacher.name }}" required>
+          </div>
+          <div class="field" style="margin:0">
+            <label style="font-size:.75rem">Grup / Kanal ID</label>
+            <input class="row-input" type="text" name="source_chat_id" value="{{ teacher.source_chat_id }}" required>
+          </div>
+          <div class="field" style="margin:0">
+            <label style="font-size:.75rem">Hoca ID <small style="color:var(--muted)">(Kanal ise Kanal ID veya 0)</small></label>
+            <input class="row-input" type="text" name="teacher_user_id" value="{{ teacher.teacher_user_id }}" required>
+          </div>
+          <div class="field" style="margin:0">
+            <label style="font-size:.75rem">Gecikme (Max Dk)</label>
+            <div style="display:flex;gap:.5rem">
+              <input class="row-input" type="number" name="delay_max_minutes" value="{{ teacher.delay_max_minutes }}" min="1" required>
+              <button class="btn btn-primary" type="submit" style="padding:.35rem .8rem;white-space:nowrap">Kaydet</button>
+            </div>
+          </div>
+        </div>
+      </form>
 
       <div>
         <div style="font-size:.85rem;font-weight:600;margin-bottom:.5rem">Bu Hocaya Emoji Atacak Hesaplar:</div>
@@ -232,6 +260,13 @@ async function deleteTeacher(teacherId) {
     await fetch(`/teachers/delete/${teacherId}`, { method: 'POST' });
     window.location.reload();
   } catch(e) { alert(e); }
+}
+
+function toggleEditTeacher(teacherId) {
+  const form = document.getElementById(`edit-form-${teacherId}`);
+  if (form) {
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  }
 }
 </script>
 </body>
