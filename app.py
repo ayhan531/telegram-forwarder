@@ -148,8 +148,11 @@ login_sessions = {}
 # QR login sessions: temp_id -> dict
 qr_sessions = {}
 
-# URL tespit regex — http/https ve www. ile baslayan linkleri bulur
-_URL_RE = re.compile(r'https?://[^\s]+|www\.[^\s]+', re.IGNORECASE)
+# URL tespit regex — http/https, www. ve t.me/ ile başlayan tüm linkleri bulur
+_URL_RE = re.compile(
+    r'https?://[^\s]+|www\.[^\s]+|(?:^|(?<=[^\w/@]))(?:t\.me|telegram\.me|tg://)[^\s]+|\b(?<!@)(?:[a-zA-Z0-9-]+\.)+(?:com|org|net|me|io|co|app|xyz|site|online|info|biz|link|vip|club|top|pro)(?:/[^\s]*)?',
+    re.IGNORECASE
+)
 
 # Türkçe ve alfanumerik harf/rakam kümesi (kelime sınırları için)
 TURK_LETTERS = "abcçdefgğhıijklmnoöprsştuüvyzABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ0123456789"
@@ -697,7 +700,9 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         caption_to_send = caption
                         media = event.message.media
 
-                        if media:
+                        is_real_media = media and not isinstance(media, types.MessageMediaWebPage)
+
+                        if is_real_media:
                             is_voice      = False
                             is_video_note = False
                             is_sticker    = False
@@ -745,7 +750,8 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 sent_msg = await client.send_message(
                                     dest_peer,
                                     message=caption_to_send,
-                                    reply_to=reply_to_msg_id
+                                    reply_to=reply_to_msg_id,
+                                    link_preview=False
                                 )
 
                     if sent_msg:
