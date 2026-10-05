@@ -164,6 +164,32 @@ def get_db():
     finally:
         db.close()
 
+# ── In-memory log buffer (son 500 satır) ──────────────────────────────────
+import sys
+import collections
+import threading
+
+_log_buffer = collections.deque(maxlen=500)
+_log_lock = threading.Lock()
+
+class _LogCapture:
+    def __init__(self, orig):
+        self._orig = orig
+    def write(self, text):
+        if text.strip():
+            with _log_lock:
+                _log_buffer.append(text.rstrip())
+        self._orig.write(text)
+    def flush(self):
+        self._orig.flush()
+    def __getattr__(self, name):
+        return getattr(self._orig, name)
+
+sys.stdout = _LogCapture(sys.stdout)
+sys.stderr = _LogCapture(sys.stderr)
+# ───────────────────────────────────────────────────────────────────────────
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Session'dan mevcut kullanıcıyı döner. Giriş yapılmamışsa login'e yönlendirir."""
     user_id = request.session.get("user_id")
@@ -981,6 +1007,50 @@ async def download_backup(request: Request, secret: str = Query("")):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+@app.get("/admin/logs")
+async def view_logs(request: Request, secret: str = Query(""), filter: str = Query(""), n: int = Query(200)):
+    """
+    Son N log satırını göster.
+    Kullanım: /admin/logs?secret=tg-backup-2026-secure&filter=Murat&n=100
+    """
+    backup_secret = os.environ.get("BACKUP_SECRET", "tg-backup-2026-secure")
+    if secret != backup_secret:
+        return HTMLResponse(content="<h1>403 Yetkisiz</h1>", status_code=403)
+
+    with _log_lock:
+        lines = list(_log_buffer)
+
+    if filter:
+        lines = [l for l in lines if filter.lower() in l.lower()]
+
+    lines = lines[-n:]
+    text_content = "\n".join(lines)
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Logs</title>
+<style>body{{background:#111;color:#0f0;font-family:monospace;font-size:12px;padding:10px}}
+pre{{white-space:pre-wrap;word-break:break-all}}
+.err{{color:#f44}} .warn{{color:#fa0}} .ok{{color:#4f4}} .debug{{color:#4af}}</style>
+<meta http-equiv="refresh" content="5"></head>
+<body>
+<h3 style="color:#fff">📋 Live Logs — son {len(lines)} satır (filter={filter!r}) | <a href="?secret={secret}&filter=Murat+Hoca&n=100" style="color:#4af">Murat Hoca</a> | <a href="?secret={secret}&filter=DEBUG&n=100" style="color:#4af">DEBUG</a> | <a href="?secret={secret}&filter=FORWARD&n=100" style="color:#4af">FORWARD</a> | <a href="?secret={secret}&n=300" style="color:#4af">Tümü</a></h3>
+<pre>"""
+    for line in lines:
+        if "❌" in line or "Error" in line or "hata" in line.lower():
+            html += f'<span class="err">{line}</span>\n'
+        elif "⚠️" in line or "uyarı" in line.lower():
+            html += f'<span class="warn">{line}</span>\n'
+        elif "✅" in line or "İletildi" in line:
+            html += f'<span class="ok">{line}</span>\n'
+        elif "🔍" in line or "DEBUG" in line or "FORWARD" in line:
+            html += f'<span class="debug">{line}</span>\n'
+        else:
+            html += line + "\n"
+    html += "</pre></body></html>"
+
+    return HTMLResponse(content=html)
 
 # ── ANA PANEL ──
 
