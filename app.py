@@ -552,11 +552,13 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak. (hoca='{t.name}', grouped_id={grouped_id})")
                                 asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
 
-            rules = db.query(Rule).filter(
-                Rule.source_chat_id == chat_id,
+            account_rules = db.query(Rule).filter(
                 Rule.account_id == account.id,
                 Rule.is_active == True
             ).all()
+
+            norm_chat = _norm_id(chat_id)
+            rules = [r for r in account_rules if _norm_id(r.source_chat_id) == norm_chat]
 
             for rule in rules:
                 if rule.sender_id and rule.sender_id != sender_id:
@@ -633,11 +635,18 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 
                 blocked_word = None
                 for f in rule.filters:
+                    search = f.search_word.strip()
+                    if not search:
+                        continue
                     replace_val = (f.replace_word or "").strip()
-                    if not replace_val or replace_val.lower() in ('[engelle]', 'engelle', '(engelle)'):
-                        search = f.search_word.strip()
-                        if not search:
-                            continue
+                    is_explicit_block = replace_val.lower() in ('[engelle]', 'engelle', '(engelle)')
+
+                    # Eğer search_word sadece tek bir biçimlendirme sembolü ise ('_', '*', '~', '`') ve kullanıcı açıkça '[engelle]' yazmamışsa:
+                    # Bu bir mesaj engelleme filtresi DEĞİL, karakter silme/temizleme filtresidir!
+                    if not replace_val and search in ('_', '*', '~', '`'):
+                        continue
+
+                    if not replace_val or is_explicit_block:
                         is_word = all(c in TURK_LETTERS for c in search)
                         pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])' if is_word else re.escape(search)
                         if re.search(pattern, raw_message_text, re.IGNORECASE):
@@ -652,13 +661,14 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 caption = raw_message_text
                 replacement_filters = [
                     f for f in rule.filters
-                    if (f.replace_word or "").strip() and (f.replace_word or "").strip().lower() not in ('[engelle]', 'engelle', '(engelle)')
+                    if (f.replace_word or "").strip().lower() not in ('[engelle]', 'engelle', '(engelle)')
+                    and ((f.replace_word or "").strip() or f.search_word.strip() in ('_', '*', '~', '`'))
                 ]
                 if replacement_filters:
                     sorted_filters = sorted(replacement_filters, key=lambda x: len(getattr(x, 'search_word', '')), reverse=True)
                     for f in sorted_filters:
                         search = f.search_word
-                        replace_str = "" if f.replace_word in ('(sil)', '<sil>') else f.replace_word
+                        replace_str = "" if f.replace_word in ('(sil)', '<sil>', '', None) else f.replace_word
                         is_word = all(c in TURK_LETTERS for c in search)
                         pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])' if is_word else re.escape(search)
                         caption = re.sub(pattern, replace_str, caption)
@@ -686,7 +696,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             input_chat = await event.get_input_chat()
                             fwd_res = await client.forward_messages(
                                 entity=dest_peer,
-                                messages=event.message,
+                                messages=event.id,
                                 from_peer=input_chat
                             )
                             if fwd_res:
@@ -730,20 +740,31 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 buf.name = "video_note.mp4"
                             elif is_photo:
                                 buf.name = "photo.jpg"
-                            await client.download_media(event.message, file=buf)
-                            buf.seek(0)
 
-                            send_kwargs = dict(
-                                entity=int(rule.destination_id),
-                                file=buf,
-                                reply_to=reply_to_msg_id,
-                                voice_note=is_voice,
-                                video_note=is_video_note,
-                            )
-                            if not is_voice and not is_video_note and not is_sticker:
-                                send_kwargs["caption"] = caption_to_send
+                            try:
+                                await client.download_media(event.message, file=buf)
+                                buf.seek(0)
 
-                            sent_msg = await client.send_file(**send_kwargs)
+                                send_kwargs = dict(
+                                    entity=dest_peer,
+                                    file=buf,
+                                    reply_to=reply_to_msg_id,
+                                    voice_note=is_voice,
+                                    video_note=is_video_note,
+                                )
+                                if not is_voice and not is_video_note and not is_sticker:
+                                    send_kwargs["caption"] = caption_to_send
+
+                                sent_msg = await client.send_file(**send_kwargs)
+                            except Exception as media_err:
+                                print(f"[{account.name}] ⚠️ Medya indirilemedi/iletilemedi ({media_err}), metin olarak deneniyor...")
+                                if caption_to_send:
+                                    sent_msg = await client.send_message(
+                                        dest_peer,
+                                        message=caption_to_send,
+                                        reply_to=reply_to_msg_id,
+                                        link_preview=False
+                                    )
 
                         else:
                             if caption_to_send:
