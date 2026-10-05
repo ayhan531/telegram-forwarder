@@ -560,6 +560,12 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             norm_chat = _norm_id(chat_id)
             rules = [r for r in account_rules if _norm_id(r.source_chat_id) == norm_chat]
 
+            # DEBUG LOG — Rule 550 kaynak kanalı (-1003577074597) için
+            if chat_id == "-1003577074597" or norm_chat == "3577074597":
+                print(f"[{account.name}] 🔍 DEBUG: chat_id={chat_id} norm={norm_chat} | account_rules={len(account_rules)} | matched_rules={len(rules)}")
+                for r in account_rules:
+                    print(f"[{account.name}] 🔍   Rule id={r.id} src={r.source_chat_id} (norm={_norm_id(r.source_chat_id)}) active={r.is_active}")
+
             for rule in rules:
                 if rule.sender_id and rule.sender_id != sender_id:
                     continue
@@ -689,6 +695,8 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 try:
                     sent_msg = None
                     dest_peer = int(rule.destination_id) if rule.destination_id.lstrip('-').isdigit() else rule.destination_id
+
+                    print(f"[{account.name}] 🔍 FORWARD ATTEMPT: rule={rule.id} src={chat_id} → dst={dest_peer} show_fwd={getattr(rule,'show_forward_header',False)} blocked_word={blocked_word!r} caption_len={len(caption)}")
 
                     # ── Kanalı / Grubu mesaj içerisinde belirt (Orijinal Telegram forward mesajı) ──
                     if getattr(rule, 'show_forward_header', False):
