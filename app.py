@@ -584,13 +584,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             ).all()
 
             norm_chat = _norm_id(chat_id)
-            rules = [r for r in account_rules if _norm_id(r.source_chat_id) == norm_chat]
-
-            # DEBUG LOG — Rule 550 kaynak kanalı (-1003577074597) için
-            if chat_id == "-1003577074597" or norm_chat == "3577074597":
-                print(f"[{account.name}] 🔍 DEBUG: chat_id={chat_id} norm={norm_chat} | account_rules={len(account_rules)} | matched_rules={len(rules)}")
-                for r in account_rules:
-                    print(f"[{account.name}] 🔍   Rule id={r.id} src={r.source_chat_id} (norm={_norm_id(r.source_chat_id)}) active={r.is_active}")
+            rules = [r for r in account_rules if _norm_id(r.source_chat_id) == norm_chat or str(r.source_chat_id).strip() == chat_id]
 
             for rule in rules:
                 if rule.sender_id and rule.sender_id != sender_id:
@@ -667,18 +661,11 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 
                 blocked_word = None
                 for f in rule.filters:
-                    search = f.search_word.strip()
-                    if not search:
-                        continue
                     replace_val = (f.replace_word or "").strip()
-                    is_explicit_block = replace_val.lower() in ('[engelle]', 'engelle', '(engelle)')
-
-                    # Eğer search_word sadece tek bir biçimlendirme sembolü ise ('_', '*', '~', '`') ve kullanıcı açıkça '[engelle]' yazmamışsa:
-                    # Bu bir mesaj engelleme filtresi DEĞİL, karakter silme/temizleme filtresidir!
-                    if not replace_val and search in ('_', '*', '~', '`'):
-                        continue
-
-                    if not replace_val or is_explicit_block:
+                    if not replace_val or replace_val.lower() in ('[engelle]', 'engelle', '(engelle)'):
+                        search = f.search_word.strip()
+                        if not search:
+                            continue
                         is_word = all(c in TURK_LETTERS for c in search)
                         pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])' if is_word else re.escape(search)
                         if re.search(pattern, raw_message_text, re.IGNORECASE):
@@ -693,14 +680,13 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 caption = raw_message_text
                 replacement_filters = [
                     f for f in rule.filters
-                    if (f.replace_word or "").strip().lower() not in ('[engelle]', 'engelle', '(engelle)')
-                    and ((f.replace_word or "").strip() or f.search_word.strip() in ('_', '*', '~', '`'))
+                    if (f.replace_word or "").strip() and (f.replace_word or "").strip().lower() not in ('[engelle]', 'engelle', '(engelle)')
                 ]
                 if replacement_filters:
                     sorted_filters = sorted(replacement_filters, key=lambda x: len(getattr(x, 'search_word', '')), reverse=True)
                     for f in sorted_filters:
                         search = f.search_word
-                        replace_str = "" if f.replace_word in ('(sil)', '<sil>', '', None) else f.replace_word
+                        replace_str = "" if f.replace_word in ('(sil)', '<sil>') else f.replace_word
                         is_word = all(c in TURK_LETTERS for c in search)
                         pattern = rf'(?<![{TURK_LETTERS}]){re.escape(search)}(?![{TURK_LETTERS}])' if is_word else re.escape(search)
                         caption = re.sub(pattern, replace_str, caption)
@@ -721,8 +707,6 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 try:
                     sent_msg = None
                     dest_peer = int(rule.destination_id) if rule.destination_id.lstrip('-').isdigit() else rule.destination_id
-
-                    print(f"[{account.name}] 🔍 FORWARD ATTEMPT: rule={rule.id} src={chat_id} → dst={dest_peer} show_fwd={getattr(rule,'show_forward_header',False)} blocked_word={blocked_word!r} caption_len={len(caption)}")
 
                     # ── Kanalı / Grubu mesaj içerisinde belirt (Orijinal Telegram forward mesajı) ──
                     if getattr(rule, 'show_forward_header', False):
