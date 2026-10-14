@@ -1,7 +1,7 @@
 import os
 import hashlib
 import datetime
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, text
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import create_engine
@@ -102,6 +102,8 @@ class Teacher(Base):
     source_chat_id    = Column(String, index=True)
     teacher_user_id   = Column(String, index=True)
     delay_max_minutes = Column(Integer, default=5)
+    is_active         = Column(Boolean, default=True)
+    resumed_at        = Column(Float, default=0.0)
 
     reactions = relationship("TeacherReaction", back_populates="teacher", cascade="all, delete-orphan")
 

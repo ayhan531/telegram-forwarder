@@ -48,9 +48,15 @@
   </aside>
 
   <main class="main">
-    <div class="main-header">
-      <h1>👨‍🏫 Hoca & Lider Emojisi</h1>
-      <p>Belirlediğiniz hocalar gruba mesaj attığında hesapların otomatik emoji bırakmasını sağlayın.</p>
+    <div class="main-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+      <div>
+        <h1 style="margin:0">👨‍🏫 Hoca & Lider Emojisi</h1>
+        <p style="margin:.25rem 0 0;color:var(--muted)">Belirlediğiniz hocalar gruba mesaj attığında hesapların otomatik emoji bırakmasını sağlayın.</p>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn" style="background:#ef4444;color:#fff;border:none;font-size:.8rem;padding:.4rem .85rem;font-weight:600;border-radius:8px;cursor:pointer" onclick="toggleAllTeachers(false)">⏸️ Tüm Emojileri Durdur</button>
+        <button class="btn" style="background:#10b981;color:#fff;border:none;font-size:.8rem;padding:.4rem .85rem;font-weight:600;border-radius:8px;cursor:pointer" onclick="toggleAllTeachers(true)">▶️ Tüm Emojileri Başlat</button>
+      </div>
     </div>
 
     <!-- HOCA EKLEME -->
@@ -81,13 +87,25 @@
 
     <!-- HOCA LİSTESİ -->
     {% for teacher in teachers %}
-    <div class="teacher-card">
+    <div class="teacher-card" style="{% if not teacher.is_active %}border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.03);{% endif %}">
       <div class="teacher-header">
         <div>
-          <h2 style="margin:0;font-size:1.1rem;color:var(--text)">{{ teacher.name }}</h2>
+          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+            <h2 style="margin:0;font-size:1.1rem;color:var(--text)">{{ teacher.name }}</h2>
+            {% if not teacher.is_active %}
+            <span style="background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);font-size:.7rem;padding:.15rem .5rem;border-radius:6px;font-weight:600">⏸️ EMOJİLER DURDURULDU</span>
+            {% else %}
+            <span style="background:rgba(16,185,129,.15);color:#10b981;border:1px solid rgba(16,185,129,.3);font-size:.7rem;padding:.15rem .5rem;border-radius:6px;font-weight:600">▶️ AKTİF</span>
+            {% endif %}
+          </div>
           <div style="font-size:.8rem;color:var(--muted);margin-top:.2rem">Grup: {{ teacher.source_chat_id }} • Hoca ID: {{ teacher.teacher_user_id }} • Süre: 1sn - {{ teacher.delay_max_minutes }}dk</div>
         </div>
-        <div style="display:flex;gap:.5rem">
+        <div style="display:flex;gap:.5rem;align-items:center">
+          {% if teacher.is_active %}
+          <button class="btn" style="background:#f59e0b;color:#000;border:none;font-weight:600;font-size:.8rem;padding:.35rem .75rem;border-radius:6px;cursor:pointer" onclick="toggleTeacherEmoji({{ teacher.id }})" title="Bu hocaya ait emojileri durdur">⏸️ Emojileri Durdur</button>
+          {% else %}
+          <button class="btn" style="background:#10b981;color:#fff;border:none;font-weight:600;font-size:.8rem;padding:.35rem .75rem;border-radius:6px;cursor:pointer" onclick="toggleTeacherEmoji({{ teacher.id }})" title="Bu hocaya ait emojileri tekrar başlat">▶️ Emojileri Başlat</button>
+          {% endif %}
           <button class="btn btn-secondary" style="font-size:.8rem;padding:.35rem .7rem" onclick="toggleEditTeacher({{ teacher.id }})">✏️ Düzenle</button>
           <button class="btn btn-secondary" style="color:var(--danger);border-color:rgba(239,68,68,.3);font-size:.8rem;padding:.35rem .7rem" onclick="deleteTeacher({{ teacher.id }})">Hocayı Sil</button>
         </div>
@@ -266,6 +284,34 @@ function toggleEditTeacher(teacherId) {
   const form = document.getElementById(`edit-form-${teacherId}`);
   if (form) {
     form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+async function toggleTeacherEmoji(teacherId) {
+  try {
+    const res = await fetch(`/teachers/${teacherId}/toggle-status`, { method: 'POST' });
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      alert('İşlem başarısız oldu.');
+    }
+  } catch(e) {
+    alert(e);
+  }
+}
+
+async function toggleAllTeachers(active) {
+  const actionText = active ? 'başlatmak' : 'durdurmak';
+  if (!confirm(`Tüm hocaların emojilerini ${actionText} istediğinize emin misiniz?`)) return;
+  try {
+    const res = await fetch(`/teachers/toggle-all?active=${active}`, { method: 'POST' });
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      alert('İşlem başarısız oldu.');
+    }
+  } catch(e) {
+    alert(e);
   }
 }
 </script>

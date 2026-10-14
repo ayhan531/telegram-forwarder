@@ -103,7 +103,21 @@ async def lifespan(app: FastAPI):
                 conn.commit()
         except Exception as e:
             print(f"[System] ⚠️ Session onarma hatası ({s_file}): {e}")
-    # -------------------------------
+    # --- DB MIGRATIONS ---
+    try:
+        with sqlite3.connect(db_path) as conn:
+            c = conn.cursor()
+            c.execute("PRAGMA table_info(teachers)")
+            cols = [col[1] for col in c.fetchall()]
+            if "is_active" not in cols:
+                c.execute("ALTER TABLE teachers ADD COLUMN is_active BOOLEAN DEFAULT 1")
+                print("[System] ✅ 'is_active' kolonu 'teachers' tablosuna eklendi.")
+            if "resumed_at" not in cols:
+                c.execute("ALTER TABLE teachers ADD COLUMN resumed_at REAL DEFAULT 0.0")
+                print("[System] ✅ 'resumed_at' kolonu 'teachers' tablosuna eklendi.")
+            conn.commit()
+    except Exception as e:
+        print(f"[System] ⚠️ DB migrasyon hatası (teachers): {e}")
 
     try:
         print("[System] Veritabanı hazır.")
@@ -559,6 +573,18 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             teachers = db.query(Teacher).all()
             matched_teacher = None
             for t in teachers:
+                # ── EMOJİ DURDURULDU KONTROLÜ ──
+                if not getattr(t, 'is_active', True):
+                    continue
+
+                # ── KAPALI OLDUĞU SÜREÇTEKİ MESAJLARI ATLA ──
+                # Hoca kapalıyken atılan veya açılmadan önceki mesajlara asla emoji atılmasın!
+                msg_date = getattr(event.message, 'date', None)
+                if msg_date and getattr(t, 'resumed_at', 0):
+                    msg_ts = msg_date.timestamp() if hasattr(msg_date, 'timestamp') else time.time()
+                    if msg_ts < t.resumed_at:
+                        continue
+
                 norm_source = _norm_id(t.source_chat_id)
                 if norm_source == norm_chat:
                     t_uid = _norm_id(t.teacher_user_id)
@@ -601,7 +627,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             
                             if should_react:
                                 print(f"[{account.name}] 👨‍🏫 Hoca mesajı algılandı! Emoji atılacak. (hoca='{t.name}', grouped_id={grouped_id})")
-                                asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes))
+                                asyncio.create_task(delayed_react(account.id, event.chat_id, event.id, react_config.emojis, t.delay_max_minutes, teacher_id=t.id, scheduled_at=time.time()))
 
             account_rules = db.query(Rule).filter(
                 Rule.account_id == account.id,
@@ -866,7 +892,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         print(f"[{account.name}] ✅ İletildi: {chat_id} msg={event.id} → {rule.destination_id} msg={sent_msg.id}")
 
                         # ── HEDEF GRUP EMOJİSİ (Yönlendirilen Mesaj İçin) ──
-                        if matched_teacher:
+                        if matched_teacher and getattr(matched_teacher, 'is_active', True):
                             grouped_id = event.message.grouped_id
                             should_react_dest = True
                             if grouped_id:
@@ -880,7 +906,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             if should_react_dest:
                                 all_react_configs = db.query(TeacherReaction).filter(TeacherReaction.teacher_id == matched_teacher.id).all()
                                 for r_conf in all_react_configs:
-                                    asyncio.create_task(delayed_react(r_conf.account_id, int(rule.destination_id), sent_msg.id, r_conf.emojis, matched_teacher.delay_max_minutes))
+                                    asyncio.create_task(delayed_react(r_conf.account_id, int(rule.destination_id), sent_msg.id, r_conf.emojis, matched_teacher.delay_max_minutes, teacher_id=matched_teacher.id, scheduled_at=time.time()))
 
                     else:
                         if is_murat:
@@ -2240,13 +2266,28 @@ async def bulk_copy_filter(request: Request, db: Session = Depends(get_db)):
         "reason": f"{skipped} hesapta aynı kaynak→hedef kural bulunamadı" if skipped else ""
     })
 
-async def delayed_react(account_id, chat_id, msg_id, emojis_str, delay_max_minutes):
+async def delayed_react(account_id, chat_id, msg_id, emojis_str, delay_max_minutes, teacher_id=None, scheduled_at=None):
     import random
     
     # 1 sn ile delay_max_minutes (dk) arasında rastgele bekle
     delay_sec = random.uniform(1, max(1, delay_max_minutes * 60))
     print(f"[Emoji Task] Hesab {account_id} -> {delay_sec:.1f} saniye bekleyecek...")
     await asyncio.sleep(delay_sec)
+
+    # ── HOCA DURDURULDU KONTROLÜ ──
+    # Eğer hoca kapalıysa VEYA mesaj kapalı olduğu süreçte gelmişse ASLA emoji atma!
+    if teacher_id:
+        try:
+            with SessionLocal() as check_db:
+                check_t = check_db.query(Teacher).filter(Teacher.id == teacher_id).first()
+                if not check_t or not getattr(check_t, 'is_active', True):
+                    print(f"[Emoji Task] ⏸️ Hoca '{getattr(check_t, 'name', teacher_id)}' emojileri durdurulduğu için iptal edildi (msg={msg_id})")
+                    return
+                if getattr(check_t, 'resumed_at', 0) and scheduled_at and scheduled_at < check_t.resumed_at:
+                    print(f"[Emoji Task] ⏭️ Mesaj hoca kapalıyken atıldığı için iptal edildi (msg={msg_id})")
+                    return
+        except Exception as check_e:
+            print(f"[Emoji Task] Hoca kontrol hatası: {check_e}")
     
     emoji_list = [e.strip() for e in emojis_str.split(',') if e.strip()]
     if not emoji_list:
@@ -2386,6 +2427,43 @@ async def delete_teacher(request: Request, t_id: int, db: Session = Depends(get_
         db.delete(t)
         db.commit()
     return JSONResponse({"ok": True})
+
+@app.post("/teachers/{t_id}/toggle-status")
+async def toggle_teacher_status(request: Request, t_id: int, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    t = db.query(Teacher).filter(Teacher.id == t_id).first()
+    if t:
+        current_state = getattr(t, 'is_active', True)
+        new_state = not current_state
+        t.is_active = new_state
+        if new_state:
+            t.resumed_at = time.time()
+            print(f"[Teachers] ▶️ Hoca '{t.name}' emojileri BAŞLATILDI (resumed_at={t.resumed_at}).")
+        else:
+            print(f"[Teachers] ⏸️ Hoca '{t.name}' emojileri DURDURULDU.")
+        db.commit()
+        return JSONResponse({"ok": True, "is_active": new_state})
+    return JSONResponse({"error": "Hoca bulunamadı"}, status_code=404)
+
+@app.post("/teachers/toggle-all")
+async def toggle_all_teachers_status(request: Request, active: bool = Query(...), db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    if not user:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+    
+    teachers = db.query(Teacher).all()
+    now = time.time()
+    for t in teachers:
+        t.is_active = active
+        if active:
+            t.resumed_at = now
+    db.commit()
+    status_str = "BAŞLATILDI" if active else "DURDURULDU"
+    print(f"[Teachers] ⚡ TÜM hocaların emojileri {status_str} (toplam {len(teachers)} hoca).")
+    return JSONResponse({"ok": True, "is_active": active})
 
 @app.post("/teachers/{t_id}/reactions/add_bulk")
 async def add_teacher_reactions_bulk(request: Request, t_id: int, db: Session = Depends(get_db)):
