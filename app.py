@@ -164,12 +164,12 @@ def get_db():
     finally:
         db.close()
 
-# ── In-memory log buffer (son 500 satır) ──────────────────────────────────
+# ── In-memory log buffer (son 3000 satır) ──────────────────────────────────
 import sys
 import collections
 import threading
 
-_log_buffer = collections.deque(maxlen=500)
+_log_buffer = collections.deque(maxlen=3000)
 _log_lock = threading.Lock()
 
 class _LogCapture:
@@ -177,8 +177,9 @@ class _LogCapture:
         self._orig = orig
     def write(self, text):
         if text.strip():
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
             with _log_lock:
-                _log_buffer.append(text.rstrip())
+                _log_buffer.append(f"[{ts}] {text.rstrip()}")
         self._orig.write(text)
     def flush(self):
         self._orig.flush()
@@ -503,6 +504,24 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
     clients[account.id] = client
     print(f"[{account.name}] Aktif.")
 
+    # Murat hesabı için sohbet listesini tara ve önbelleğe al
+    if "murat" in account.name.lower():
+        async def _cache_dialogs():
+            try:
+                print(f"[{account.name}] 🔍 [DEBUG-MURAT] Sohbet listesi taranıyor...")
+                dialog_count = 0
+                async for d in client.iter_dialogs(limit=100):
+                    dialog_count += 1
+                    d_title = getattr(d, 'name', '') or getattr(d, 'title', '')
+                    d_id = str(d.id)
+                    if any(k in d_id for k in ["3577074597", "2124049899"]) or any(k in d_title.upper() for k in ["GÜNLÜK", "TAVAN", "VIP"]):
+                        print(f"[{account.name}] 📌 [DEBUG-MURAT] Sohbet bulundu: id={d_id} | title='{d_title}' | is_channel={d.is_channel} | is_group={d.is_group}")
+                print(f"[{account.name}] 📚 [DEBUG-MURAT] Toplam {dialog_count} sohbet tarandı ve önbelleğe alındı.")
+            except Exception as e:
+                print(f"[{account.name}] ⚠️ [DEBUG-MURAT] Dialog tarama hatası: {e}")
+
+        asyncio.create_task(_cache_dialogs())
+
     # ── Geçmiş mesajları eşleştir (reaksiyon iletimi için — kademeli başlat) ──
     async def _delayed_backfill():
         await asyncio.sleep(60 + (account.id % 90))
@@ -516,6 +535,12 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
         chat_id = str(event.chat_id)
         sender = await event.get_sender()
         sender_id = str(sender.id) if sender else None
+        is_murat = ("murat" in account.name.lower()) or ("3577074597" in chat_id) or ("2124049899" in chat_id)
+
+        if is_murat:
+            raw_txt = (event.message.message or '')[:60].replace('\n', ' ')
+            media_type = type(event.message.media).__name__ if event.message.media else 'Yok'
+            print(f"[{account.name}] 📨 [DEBUG-MURAT] Yeni mesaj algılandı! chat_id={chat_id} | msg_id={event.id} | sender={sender_id} | media={media_type} | text='{raw_txt}'")
 
         db = SessionLocal()
         try:
@@ -586,8 +611,18 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
             norm_chat = _norm_id(chat_id)
             rules = [r for r in account_rules if _norm_id(r.source_chat_id) == norm_chat or str(r.source_chat_id).strip() == chat_id]
 
+            if is_murat:
+                print(f"[{account.name}] 🔍 [DEBUG-MURAT] Kural kontrolü: chat_id={chat_id} (norm={norm_chat}) | Hesaptaki aktif kural sayısı={len(account_rules)} | Eşleşen kural={len(rules)}")
+                for r in account_rules:
+                    print(f"[{account.name}]    ↳ Kural #{r.id}: src={r.source_chat_id} (norm={_norm_id(r.source_chat_id)}) → dst={r.destination_id} | is_active={r.is_active} | fwd_header={getattr(r, 'show_forward_header', False)}")
+
             for rule in rules:
+                if is_murat:
+                    print(f"[{account.name}] 🎯 [DEBUG-MURAT] Kural #{rule.id} uygulanıyor ({rule.source_chat_id} → {rule.destination_id})")
+
                 if rule.sender_id and rule.sender_id != sender_id:
+                    if is_murat:
+                        print(f"[{account.name}] ⏭️ [DEBUG-MURAT] Gönderen uyuşmadı: kural_sender={rule.sender_id} != mesaj_sender={sender_id}")
                     continue
 
                 # ── Yanıt (reply) eşleştirmesi ──
@@ -673,8 +708,13 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                             break
 
                 if blocked_word:
-                    print(f"[{account.name}] 🚫 Yasaklı kelime tespit edildi ('{blocked_word}'), mesaj iletilmedi (msg={event.id})")
+                    print(f"[{account.name}] 🚫 Yasaklı kelime tespit edildi ('{blocked_word}'), mesaj iletilmedi (msg={event.id}) [kural={rule.id}]")
                     continue
+                elif is_murat:
+                    if rule.filters:
+                        print(f"[{account.name}] 🔍 [DEBUG-MURAT] Filtre kontrolü başarılı (engellenmedi). Aktif filtreler: {[(f.search_word, f.replace_word) for f in rule.filters]}")
+                    else:
+                        print(f"[{account.name}] 🔍 [DEBUG-MURAT] Bu kuralda hiç filtre yok.")
 
                 # ── 2. Kelime değiştirme filtreleri (Bul -> Değiştir) ──
                 caption = raw_message_text
@@ -698,20 +738,25 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                 # ── Link kontrol ──
                 has_links = bool(_URL_RE.search(caption))
                 if rule.block_links and has_links:
-                    print(f"[{account.name}] 🔗 Linkli mesaj engellendi (msg={event.id})")
+                    print(f"[{account.name}] 🔗 Linkli mesaj engellendi (msg={event.id}) [kural={rule.id}]")
                     continue
                 if rule.replace_link and has_links:
                     caption = _URL_RE.sub(rule.replace_link, caption)
-                    print(f"[{account.name}] 🔗 Link degistirildi → {rule.replace_link} (msg={event.id})")
+                    print(f"[{account.name}] 🔗 Link degistirildi → {rule.replace_link} (msg={event.id}) [kural={rule.id}]")
 
                 try:
                     sent_msg = None
                     dest_peer = int(rule.destination_id) if rule.destination_id.lstrip('-').isdigit() else rule.destination_id
 
+                    if is_murat:
+                        print(f"[{account.name}] 🚀 [DEBUG-MURAT] İletim denemesi başlıyor: msg={event.id} → dst={dest_peer} | show_forward_header={getattr(rule, 'show_forward_header', False)}")
+
                     # ── Kanalı / Grubu mesaj içerisinde belirt (Orijinal Telegram forward mesajı) ──
                     if getattr(rule, 'show_forward_header', False):
                         try:
                             input_chat = await event.get_input_chat()
+                            if is_murat:
+                                print(f"[{account.name}] 🚀 [DEBUG-MURAT] forward_messages çağrılıyor: entity={dest_peer}, msg={event.id}, from_peer={input_chat}")
                             fwd_res = await client.forward_messages(
                                 entity=dest_peer,
                                 messages=event.id,
@@ -721,7 +766,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 sent_msg = fwd_res[0] if isinstance(fwd_res, list) else fwd_res
                                 print(f"[{account.name}] 📢 Orijinal kaynak belirtilerek iletildi (msg={event.id} → {sent_msg.id})")
                         except Exception as fwd_e:
-                            print(f"[{account.name}] ⚠️ Native forward yapılamadı ({fwd_e}), kopya ile gönderiliyor...")
+                            print(f"[{account.name}] ⚠️ Native forward yapılamadı ({type(fwd_e).__name__}: {fwd_e}), kopya ile gönderiliyor...")
 
                     # Eğer show_forward_header kapalıysa VEYA native forward başarısız olduysa kopya olarak ilet:
                     if not sent_msg:
@@ -729,6 +774,9 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                         media = event.message.media
 
                         is_real_media = media and not isinstance(media, types.MessageMediaWebPage)
+
+                        if is_murat:
+                            print(f"[{account.name}] 📦 [DEBUG-MURAT] Kopya iletim deneniyor: is_real_media={bool(is_real_media)}, caption_len={len(caption_to_send or '')}")
 
                         if is_real_media:
                             is_voice      = False
@@ -760,8 +808,12 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 buf.name = "photo.jpg"
 
                             try:
+                                if is_murat:
+                                    print(f"[{account.name}] 📥 [DEBUG-MURAT] Medya indiriliyor...")
                                 await client.download_media(event.message, file=buf)
                                 buf.seek(0)
+                                if is_murat:
+                                    print(f"[{account.name}] 📤 [DEBUG-MURAT] Medya gönderiliyor: size={buf.getbuffer().nbytes} bytes → dst={dest_peer}")
 
                                 send_kwargs = dict(
                                     entity=dest_peer,
@@ -775,7 +827,7 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
 
                                 sent_msg = await client.send_file(**send_kwargs)
                             except Exception as media_err:
-                                print(f"[{account.name}] ⚠️ Medya indirilemedi/iletilemedi ({media_err}), metin olarak deneniyor...")
+                                print(f"[{account.name}] ⚠️ Medya indirilemedi/iletilemedi ({type(media_err).__name__}: {media_err}), metin olarak deneniyor...")
                                 if caption_to_send:
                                     sent_msg = await client.send_message(
                                         dest_peer,
@@ -783,15 +835,23 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                         reply_to=reply_to_msg_id,
                                         link_preview=False
                                     )
+                                else:
+                                    if is_murat:
+                                        print(f"[{account.name}] ❌ [DEBUG-MURAT] Medya gönderilemedi ve metin de yok!")
 
                         else:
                             if caption_to_send:
+                                if is_murat:
+                                    print(f"[{account.name}] 📤 [DEBUG-MURAT] send_message çağrılıyor: dst={dest_peer}")
                                 sent_msg = await client.send_message(
                                     dest_peer,
                                     message=caption_to_send,
                                     reply_to=reply_to_msg_id,
                                     link_preview=False
                                 )
+                            else:
+                                if is_murat:
+                                    print(f"[{account.name}] ⚠️ [DEBUG-MURAT] Gönderilecek metin (caption) boş ve medya yok!")
 
                     if sent_msg:
                         new_mapping = MessageMapping(
@@ -822,8 +882,16 @@ async def start_client(account: Account, _existing_client: TelegramClient = None
                                 for r_conf in all_react_configs:
                                     asyncio.create_task(delayed_react(r_conf.account_id, int(rule.destination_id), sent_msg.id, r_conf.emojis, matched_teacher.delay_max_minutes))
 
+                    else:
+                        if is_murat:
+                            print(f"[{account.name}] ❌ [DEBUG-MURAT] sent_msg None kaldı! Mesaj iletilemedi.")
+
                 except Exception as e:
-                    print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {e}")
+                    import traceback
+                    print(f"[{account.name}] ❌ İletim hatası (msg={event.id}): {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        except Exception as e:
+            import traceback
+            print(f"[{account.name}] 💥 message_handler KRİTİK HATA: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         finally:
             db.close()
 
@@ -1018,8 +1086,15 @@ async def view_logs(request: Request, secret: str = Query(""), filter: str = Que
 pre{{white-space:pre-wrap;word-break:break-all}}
 .err{{color:#f44}} .warn{{color:#fa0}} .ok{{color:#4f4}} .debug{{color:#4af}}</style>
 <meta http-equiv="refresh" content="5"></head>
-<body>
-<h3 style="color:#fff">📋 Live Logs — son {len(lines)} satır (filter={filter!r}) | <a href="?secret={secret}&filter=Murat+Hoca&n=100" style="color:#4af">Murat Hoca</a> | <a href="?secret={secret}&filter=DEBUG&n=100" style="color:#4af">DEBUG</a> | <a href="?secret={secret}&filter=FORWARD&n=100" style="color:#4af">FORWARD</a> | <a href="?secret={secret}&n=300" style="color:#4af">Tümü</a></h3>
+<h3 style="color:#fff">📋 Live Logs — son {len(lines)} satır (filter={filter!r}) | 
+<a href="?secret={secret}&filter=Murat&n=300" style="color:#4af;font-weight:bold">Murat</a> | 
+<a href="?secret={secret}&filter=DEBUG-MURAT&n=300" style="color:#ff0;font-weight:bold">DEBUG-MURAT</a> | 
+<a href="?secret={secret}&filter=3577074597&n=300" style="color:#0ff">Kaynak Kanal</a> | 
+<a href="?secret={secret}&filter=2124049899&n=300" style="color:#0ff">Hedef Kanal</a> | 
+<a href="?secret={secret}&filter=İletildi&n=300" style="color:#4f4">İletilenler</a> | 
+<a href="?secret={secret}&filter=Yasaklı&n=300" style="color:#fa0">Engellenenler</a> | 
+<a href="?secret={secret}&filter=hata&n=300" style="color:#f44">Hatalar</a> | 
+<a href="?secret={secret}&n=1000" style="color:#fff">Son 1000</a></h3>
 <pre>"""
     for line in lines:
         if "❌" in line or "Error" in line or "hata" in line.lower():
@@ -1470,13 +1545,22 @@ async def verify_2fa_code(
 async def delete_account(account_id: int, db: Session = Depends(get_db)):
     acc = db.query(Account).filter(Account.id == account_id).first()
     if acc:
+        print(f"[Account] 🗑️ Hesap siliniyor: id={acc.id}, name='{acc.name}', phone={acc.phone}")
         if acc.id in clients:
-            await clients[acc.id].disconnect()
+            try:
+                await clients[acc.id].disconnect()
+            except Exception:
+                pass
             del clients[acc.id]
         if os.path.exists(acc.session_file):
-            os.remove(acc.session_file)
+            try:
+                os.remove(acc.session_file)
+                print(f"[Account] 🗑️ Session dosyası silindi: {acc.session_file}")
+            except Exception as e:
+                print(f"[Account] ⚠️ Session dosyası silinemedi: {e}")
         db.delete(acc)
         db.commit()
+        print(f"[Account] ✅ Hesap veritabanından silindi (id={account_id})")
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/rules")
@@ -1524,6 +1608,8 @@ async def add_rule(
     )
     db.add(new_rule)
     db.commit()
+    db.refresh(new_rule)
+    print(f"[Rules] ➕ Yeni kural oluşturuldu: id={new_rule.id}, account_id={account_id}, src={source_chat_id}, dst={destination_id}, fwd_header={show_forward_header}, desc='{description}'")
     return RedirectResponse(url="/", status_code=303)
 
 import glob
