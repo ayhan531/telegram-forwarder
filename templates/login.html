@@ -206,11 +206,11 @@
 
   <div id="passSection" style="display:none; animation: fadeUp .3s ease both;">
     <div class="section-label" id="selectedUserLabel">Şifre Gir</div>
-    <form method="POST" action="/login" id="loginForm" style="display:block">
+    <form method="POST" action="/login" id="loginForm" autocomplete="off" style="display:block">
       <input type="hidden" name="username" id="usernameField">
       <div class="field" style="margin-bottom:1rem">
         <input type="password" name="password" id="passwordField" 
-               placeholder="••••••••" required
+               placeholder="••••••••" required autocomplete="new-password"
                style="width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:12px; padding:.9rem 1rem; color:white; outline:none; font-size:1rem; border-color:var(--primary)">
       </div>
       <button type="submit" class="btn btn-primary btn-block" style="padding:1rem; border-radius:12px; font-size:1rem">
@@ -241,10 +241,12 @@ function selectUser(username, display) {
     tile.style.background = 'rgba(99,102,241,.15)';
   }
 
-  document.getElementById('usernameField').value = username;
+  document.getElementById('usernameField').value = username.trim();
+  const pwdField = document.getElementById('passwordField');
+  pwdField.value = '';
   document.getElementById('selectedUserLabel').innerText = display + " için şifre girin";
   document.getElementById('passSection').style.display = 'block';
-  document.getElementById('passwordField').focus();
+  setTimeout(() => pwdField.focus(), 50);
 }
 </script>
 </body>

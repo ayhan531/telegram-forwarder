@@ -1014,8 +1014,18 @@ async def login_post(
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.username == username).first()
-    if not user or user.password_hash != hash_password(password):
+    clean_username = username.strip() if username else ""
+    clean_password = password.strip() if password else ""
+    user = db.query(User).filter(User.username == clean_username).first()
+    if not user:
+        user = db.query(User).filter(User.username.ilike(clean_username)).first()
+
+    valid = False
+    if user and user.password_hash:
+        if user.password_hash == hash_password(clean_password) or user.password_hash == hash_password(password):
+            valid = True
+
+    if not valid:
         request.session["login_error"] = "Hatalı şifre veya kullanıcı."
         return RedirectResponse(url="/login", status_code=303)
     
@@ -1712,17 +1722,43 @@ async def toggle_rule(rule_id: int, request: Request, db: Session = Depends(get_
 @app.post("/rules/{rule_id}/filters")
 async def add_filter(
     rule_id: int,
+    request: Request,
     search_word: str = Form(...),
     replace_word: str = Form(""),
     db: Session = Depends(get_db)
 ):
+    clean_search = search_word.strip()
+    clean_replace = replace_word.strip() if replace_word else ""
+    is_json = request.headers.get("accept", "").startswith("application/json") or request.headers.get("x-requested-with") == "XMLHttpRequest"
+
+    if not clean_search:
+        if is_json:
+            return JSONResponse({"ok": False, "error": "Filtre kelimesi boş olamaz"}, status_code=400)
+        return RedirectResponse(url="/", status_code=303)
+
     new_filter = WordFilter(
         rule_id=rule_id,
-        search_word=search_word,
-        replace_word=replace_word
+        search_word=clean_search,
+        replace_word=clean_replace
     )
     db.add(new_filter)
     db.commit()
+    db.refresh(new_filter)
+
+    total_filters = db.query(WordFilter).filter(WordFilter.rule_id == rule_id).count()
+
+    if is_json:
+        return JSONResponse({
+            "ok": True,
+            "filter": {
+                "id": new_filter.id,
+                "rule_id": rule_id,
+                "search_word": new_filter.search_word,
+                "replace_word": new_filter.replace_word
+            },
+            "total_filters": total_filters
+        })
+
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/rules/{rule_id}/link-settings")
@@ -1743,11 +1779,40 @@ async def update_rule_links(
 
 
 @app.post("/filters/{filter_id}/delete")
-async def delete_filter(filter_id: int, db: Session = Depends(get_db)):
+async def delete_filter(filter_id: int, request: Request, db: Session = Depends(get_db)):
+    is_json = request.headers.get("accept", "").startswith("application/json") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     f = db.query(WordFilter).filter(WordFilter.id == filter_id).first()
+    rule_id = f.rule_id if f else None
     if f:
         db.delete(f)
         db.commit()
+
+    total_filters = db.query(WordFilter).filter(WordFilter.rule_id == rule_id).count() if rule_id else 0
+
+    if is_json:
+        return JSONResponse({
+            "ok": True,
+            "deleted_id": filter_id,
+            "rule_id": rule_id,
+            "total_filters": total_filters
+        })
+
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/rules/{rule_id}/filters/clear")
+async def clear_rule_filters(rule_id: int, request: Request, db: Session = Depends(get_db)):
+    is_json = request.headers.get("accept", "").startswith("application/json") or request.headers.get("x-requested-with") == "XMLHttpRequest"
+    deleted_count = db.query(WordFilter).filter(WordFilter.rule_id == rule_id).delete(synchronize_session=False)
+    db.commit()
+
+    if is_json:
+        return JSONResponse({
+            "ok": True,
+            "deleted_count": deleted_count,
+            "rule_id": rule_id,
+            "total_filters": 0
+        })
+
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/resolve-link")
@@ -2855,13 +2920,25 @@ async def hukumdar_change_password(
     new_password: str = Form(...),
     db: Session = Depends(get_db)
 ):
+    is_json = request.headers.get("accept", "").startswith("application/json") or request.headers.get("x-requested-with") == "XMLHttpRequest"
     if not check_hukumdar_auth(request):
+        if is_json:
+            return JSONResponse({"ok": False, "error": "Yetkisiz işlem"}, status_code=401)
         return RedirectResponse(url="/hukumdar/login", status_code=303)
+
     u = db.query(User).filter(User.id == user_id).first()
-    if u and new_password.strip():
-        u.password_hash = hash_password(new_password.strip())
+    clean_pwd = new_password.strip() if new_password else ""
+    if u and clean_pwd:
+        u.password_hash = hash_password(clean_pwd)
         db.commit()
-    return RedirectResponse(url="/hukumdar", status_code=303)
+        db.refresh(u)
+        if is_json:
+            return JSONResponse({"ok": True, "message": f"{u.display_name} şifresi başarıyla güncellendi!"})
+    elif not clean_pwd:
+        if is_json:
+            return JSONResponse({"ok": False, "error": "Şifre boş olamaz!"}, status_code=400)
+
+    return RedirectResponse(url="/hukumdar#tab-users", status_code=303)
 
 @app.post("/hukumdar/tasks/create")
 async def hukumdar_create_task(
@@ -4123,6 +4200,67 @@ async def bulk_toggle_rules(request: Request, db: Session = Depends(get_db)):
 
     db.commit()
     return JSONResponse({"ok": True, "count": count})
+
+
+@app.post("/rules/bulk-clear-filters")
+async def bulk_clear_rule_filters(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+
+    try:
+        body = await request.json()
+        rule_ids = body.get("rule_ids", [])
+    except Exception:
+        rule_ids = []
+
+    if not rule_ids:
+        return JSONResponse({"error": "Hiçbir kural seçilmedi"}, status_code=400)
+
+    authorized_rule_ids = []
+    for r_id in rule_ids:
+        rule = db.query(Rule).filter(Rule.id == r_id).first()
+        if rule and (is_admin or (user and rule.account and rule.account.user_id == user.id)):
+            authorized_rule_ids.append(rule.id)
+
+    deleted_count = 0
+    if authorized_rule_ids:
+        deleted_count = db.query(WordFilter).filter(WordFilter.rule_id.in_(authorized_rule_ids)).delete(synchronize_session=False)
+        db.commit()
+
+    return JSONResponse({"ok": True, "deleted_count": deleted_count, "rule_ids": authorized_rule_ids})
+
+
+@app.post("/accounts/bulk-clear-filters")
+async def bulk_clear_account_filters(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    is_admin = check_hukumdar_auth(request)
+    if not user and not is_admin:
+        return JSONResponse({"error": "Giriş yapılmamış"}, status_code=401)
+
+    try:
+        body = await request.json()
+        account_ids = body.get("account_ids", [])
+    except Exception:
+        account_ids = []
+
+    if not account_ids:
+        return JSONResponse({"error": "Hiçbir hesap seçilmedi"}, status_code=400)
+
+    authorized_rule_ids = []
+    for acc_id in account_ids:
+        acc = db.query(Account).filter(Account.id == acc_id).first()
+        if acc and (is_admin or (user and acc.user_id == user.id)):
+            r_ids = [r.id for r in db.query(Rule.id).filter(Rule.account_id == acc.id).all()]
+            authorized_rule_ids.extend(r_ids)
+
+    deleted_count = 0
+    if authorized_rule_ids:
+        deleted_count = db.query(WordFilter).filter(WordFilter.rule_id.in_(authorized_rule_ids)).delete(synchronize_session=False)
+        db.commit()
+
+    return JSONResponse({"ok": True, "deleted_count": deleted_count, "rule_ids": authorized_rule_ids})
 
 
 if __name__ == "__main__":

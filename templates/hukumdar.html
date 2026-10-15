@@ -374,16 +374,17 @@
             </div>
           </div>
 
-          <form action="/hukumdar/users/change-password" method="POST" style="margin-top:.8rem">
+          <form onsubmit="submitChangePassword(event, {{ u.id }}, '{{ u.display_name }}')" action="/hukumdar/users/change-password" method="POST" style="margin-top:.8rem">
             <input type="hidden" name="user_id" value="{{ u.id }}">
             <label style="font-size:.75rem; color:var(--text-muted); display:block; margin-bottom:.3rem">Yeni Şifre</label>
             <div style="display:flex; gap:.4rem">
-              <input type="text" name="new_password" id="pwd_field_{{ u.id }}" placeholder="Yeni güçlü şifre..." required style="flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.55rem .8rem; color:white; font-size:.88rem">
+              <input type="text" name="new_password" id="pwd_field_{{ u.id }}" placeholder="Yeni güçlü şifre..." autocomplete="new-password" required style="flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.55rem .8rem; color:white; font-size:.88rem">
               <button type="button" class="act-btn" onclick="genPassword('pwd_field_{{ u.id }}')" title="Rastgele Şifre Üret">🎲 Üret</button>
-              <button type="submit" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.55rem 1rem; border-radius:8px; border:none; cursor:pointer">
+              <button type="submit" id="pwd_btn_{{ u.id }}" class="btn" style="background:var(--gold-g); color:#000; font-weight:700; padding:.55rem 1rem; border-radius:8px; border:none; cursor:pointer">
                 Kaydet
               </button>
             </div>
+            <div id="pwd_status_{{ u.id }}" style="margin-top:.4rem; font-size:.75rem; display:none"></div>
           </form>
         </div>
         {% endfor %}
@@ -1129,9 +1130,18 @@
 function showTab(tabId) {
   document.querySelectorAll('.h-tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.getElementById(tabId).classList.add('active');
-  event.target.classList.add('active');
+  const p = document.getElementById(tabId);
+  if (p) p.classList.add('active');
+  const btn = Array.from(document.querySelectorAll('.h-tab-btn')).find(b => b.getAttribute('onclick') && b.getAttribute('onclick').includes(tabId));
+  if (btn) btn.classList.add('active');
 }
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (window.location.hash) {
+    const t = window.location.hash.replace('#', '');
+    if (document.getElementById(t)) showTab(t);
+  }
+});
 
 function filterByUser(userId, btn) {
   document.querySelectorAll('.user-pill-filter').forEach(b => b.classList.remove('active'));
@@ -1166,6 +1176,61 @@ function genPassword(elementId) {
     pwd += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   document.getElementById(elementId).value = pwd;
+}
+
+async function submitChangePassword(e, userId, displayName) {
+  if (e) e.preventDefault();
+  const input = document.getElementById('pwd_field_' + userId);
+  const btn = document.getElementById('pwd_btn_' + userId);
+  const status = document.getElementById('pwd_status_' + userId);
+  const newPwd = input ? input.value.trim() : '';
+  if (!newPwd) {
+    alert('Lütfen geçerli bir şifre girin!');
+    return;
+  }
+
+  const origBtnText = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = '⏳';
+
+  try {
+    const formData = new FormData();
+    formData.append('user_id', userId);
+    formData.append('new_password', newPwd);
+
+    const res = await fetch('/hukumdar/users/change-password', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: formData
+    });
+
+    const data = await res.json();
+    if (data.ok) {
+      btn.innerText = '✓ Kaydedildi';
+      btn.style.background = '#4ade80';
+      if (status) {
+        status.style.display = 'block';
+        status.style.color = '#4ade80';
+        status.innerText = '✅ ' + displayName + ' şifresi başarıyla güncellendi: ' + newPwd;
+      }
+      setTimeout(() => {
+        btn.innerText = origBtnText;
+        btn.style.background = 'var(--gold-g)';
+        btn.disabled = false;
+      }, 3000);
+    } else {
+      alert(data.error || 'Şifre güncellenemedi');
+      btn.innerText = origBtnText;
+      btn.disabled = false;
+    }
+  } catch(err) {
+    alert('İşlem hatası: ' + err);
+    btn.innerText = origBtnText;
+    btn.disabled = false;
+  }
 }
 
 function openModal(id) { document.getElementById(id).style.display = 'flex'; }

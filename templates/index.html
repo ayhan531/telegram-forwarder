@@ -144,6 +144,7 @@
         <button onclick="bulkAction('pause')" style="padding:.35rem .7rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">⏸ Seçilenleri Durdur</button>
         <button onclick="bulkAction('resume')" style="padding:.35rem .7rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">▶ Seçilenleri Başlat</button>
         <button onclick="bulkAction('delete')" style="padding:.35rem .7rem;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fca5a5;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">🗑️ Seçilen Hesapları Sil</button>
+        <button onclick="bulkAction('clear_filters')" style="padding:.35rem .7rem;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.15);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer" title="Seçilen hesaplardaki tüm kurallara ait kelime filtrelerini temizler (kurallar silinmez)">🧹 Seçili Hesapların Filtrelerini Temizle</button>
         <button onclick="clearSelection()" style="padding:.35rem .7rem;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text-muted);border-radius:6px;font-size:.76rem;cursor:pointer">✕ Seçimi Temizle</button>
       </div>
 
@@ -315,6 +316,7 @@
         <button onclick="bulkRuleAction('pause')" style="padding:.35rem .7rem;border:1px solid rgba(251,191,36,.4);background:rgba(251,191,36,.1);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">⏸ Seçilenleri Durdur</button>
         <button onclick="bulkRuleAction('resume')" style="padding:.35rem .7rem;border:1px solid rgba(74,222,128,.4);background:rgba(74,222,128,.1);color:#4ade80;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">▶ Seçilenleri Başlat</button>
         <button onclick="bulkRuleAction('delete')" style="padding:.35rem .7rem;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fca5a5;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer">🗑️ Seçilen Kuralları Sil</button>
+        <button onclick="bulkRuleAction('clear_filters')" style="padding:.35rem .7rem;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.15);color:#fbbf24;border-radius:6px;font-size:.76rem;font-weight:600;cursor:pointer" title="Seçilen kurallara ait kelime filtrelerini temizler (kurallar silinmez)">🧹 Seçili Kuralların Filtrelerini Temizle</button>
         <button onclick="clearRuleSelection()" style="padding:.35rem .7rem;border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text-muted);border-radius:6px;font-size:.76rem;cursor:pointer">✕ Seçimi Temizle</button>
       </div>
 
@@ -367,38 +369,59 @@
               <td class="text-sm text-muted">{{ rule.description or '—' }}</td>
               <td>
                 <!-- Mini filtre formu -->
-                <details>
-                  <summary style="cursor:pointer;font-size:.78rem;color:var(--primary)">
-                    {{ rule.filters|length }} filtre
-                  </summary>
-                  <div style="margin-top:.5rem">
-                    {% for f in rule.filters %}
-                    <div class="flex items-center gap-2 mb-1" style="font-size:.75rem">
-                      <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.search_word }}</code>
-                      <span class="text-muted">→</span>
-                      {% if f.replace_word %}
-                        <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px;color:#a5b4fc">{{ f.replace_word }}</code>
-                      {% else %}
-                        <span style="background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.35);padding:.1rem .4rem;border-radius:4px;font-weight:700">🚫 Mesajı Engelle</span>
-                      {% endif %}
-                      <form action="/filters/{{ f.id }}/delete" method="POST" style="margin-left:auto">
-                        <button type="submit" class="btn-danger" style="padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer">✕</button>
+                <div style="display:flex; align-items:center; gap:.4rem">
+                  <details id="details-rule-{{ rule.id }}" style="flex:1">
+                    <summary style="cursor:pointer;font-size:.78rem;color:var(--primary);white-space:nowrap">
+                      <span id="filter-count-{{ rule.id }}">{{ rule.filters|length }} filtre</span>
+                    </summary>
+                    <div style="margin-top:.5rem">
+                      <!-- Filtre temizleme butonu (kutu içi) -->
+                      <div id="filter-clear-box-{{ rule.id }}" style="margin-bottom:.5rem; {% if not rule.filters %}display:none;{% endif %}">
+                        <button type="button" onclick="clearSingleRuleFilters({{ rule.id }})" 
+                                style="width:100%; padding:.25rem .5rem; border:1px solid rgba(239,68,68,.3); background:rgba(239,68,68,.1); color:#fca5a5; border-radius:6px; font-size:.7rem; cursor:pointer; font-weight:600">
+                          🧹 Bu Kuraldaki Tüm Filtreleri Temizle
+                        </button>
+                      </div>
+
+                      <div id="filter-list-{{ rule.id }}">
+                        {% for f in rule.filters %}
+                        <div class="flex items-center gap-2 mb-1" id="filter-item-{{ f.id }}" style="font-size:.75rem">
+                          <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px">{{ f.search_word }}</code>
+                          <span class="text-muted">→</span>
+                          {% if f.replace_word %}
+                            <code style="background:var(--surface2);padding:.1rem .4rem;border-radius:4px;color:#a5b4fc">{{ f.replace_word }}</code>
+                          {% else %}
+                            <span style="background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.35);padding:.1rem .4rem;border-radius:4px;font-weight:700">🚫 Mesajı Engelle</span>
+                          {% endif %}
+                          <button type="button" onclick="deleteFilterAjax({{ f.id }}, {{ rule.id }})" class="btn-danger" style="margin-left:auto;padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer">✕</button>
+                        </div>
+                        {% endfor %}
+                      </div>
+
+                      <form onsubmit="addFilterAjax(event, {{ rule.id }})" class="flex gap-2 mt-2">
+                        <input type="text" name="search_word" id="filter-search-{{ rule.id }}" placeholder="Kelime (örn: HEDEF)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
+                        <input type="text" name="replace_word" id="filter-replace-{{ rule.id }}" placeholder="Değiştir (boş = mesajı engelle)" title="Boş bırakırsanız bu kelimeyi içeren mesajlar direkt engellenir ve iletilmez" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
+                        <button type="submit" id="btn-add-filter-{{ rule.id }}" title="Filtre Ekle" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
                       </form>
+
+                      <div id="filter-copy-wrap-{{ rule.id }}" style="{% if not rule.filters %}display:none;{% endif %}">
+                        <button onclick="openFilterCopy({{ rule.id }})"
+                          style="margin-top:.5rem;width:100%;padding:.35rem;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.1);color:#a5b4fc;border-radius:6px;font-size:.72rem;cursor:pointer;font-weight:600">
+                          📋 Bu filtreyi diğer hesaplara kopyala
+                        </button>
+                      </div>
                     </div>
-                    {% endfor %}
-                    <form action="/rules/{{ rule.id }}/filters" method="POST" class="flex gap-2 mt-2">
-                      <input type="text" name="search_word" placeholder="Kelime (örn: HEDEF)" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none" required>
-                      <input type="text" name="replace_word" placeholder="Değiştir (boş = mesajı engelle)" title="Boş bırakırsanız bu kelimeyi içeren mesajlar direkt engellenir ve iletilmez" style="flex:1;font-size:.78rem;padding:.35rem .6rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:white;outline:none">
-                      <button type="submit" title="Filtre Ekle" style="background:var(--primary-g);color:white;border:none;border-radius:6px;padding:.35rem .75rem;font-size:.78rem;cursor:pointer;font-weight:600">+</button>
-                    </form>
-                    {% if rule.filters %}
-                    <button onclick="openFilterCopy({{ rule.id }})"
-                      style="margin-top:.5rem;width:100%;padding:.35rem;border:1px solid rgba(99,102,241,.4);background:rgba(99,102,241,.1);color:#a5b4fc;border-radius:6px;font-size:.72rem;cursor:pointer;font-weight:600">
-                      📋 Bu filtreyi diğer hesaplara kopyala
-                    </button>
-                    {% endif %}
-                  </div>
-                </details>
+                  </details>
+
+                  <!-- 3. Talep: '8 filtre' yazısının yanına filtreleri temizle seçeneği -->
+                  <button type="button" 
+                          onclick="clearSingleRuleFilters({{ rule.id }})" 
+                          id="btn-quick-clear-{{ rule.id }}" 
+                          title="Bu kuraldaki tüm filtreleri temizle" 
+                          style="background:rgba(239,68,68,.12); color:#fca5a5; border:1px solid rgba(239,68,68,.3); border-radius:6px; padding:.2rem .45rem; font-size:.68rem; font-weight:600; cursor:pointer; white-space:nowrap; {% if not rule.filters %}display:none;{% endif %}">
+                    🧹 Temizle
+                  </button>
+                </div>
               </td>
               <td>
                 <details>
@@ -725,6 +748,37 @@ async function bulkAction(action) {
     return;
   }
 
+  if (action === 'clear_filters') {
+    if (!confirm(`Seçili ${ids.length} hesaptaki kurallara ait tüm filtreleri temizlemek istediğinize emin misiniz?\n(Kurallarınız silinmez, sadece filtreler sıfırlanır.)`)) return;
+    try {
+      const res = await fetch('/accounts/bulk-clear-filters', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({account_ids: ids})
+      });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(`🧹 Seçili hesaplardaki ${d.deleted_count} filtre temizlendi`, 'warn');
+        (d.rule_ids || []).forEach(rId => {
+          const list = document.getElementById('filter-list-' + rId);
+          if (list) list.innerHTML = '';
+          const cnt = document.getElementById('filter-count-' + rId);
+          if (cnt) cnt.textContent = '0 filtre';
+          const qBtn = document.getElementById('btn-quick-clear-' + rId);
+          if (qBtn) qBtn.style.display = 'none';
+          const clearBox = document.getElementById('filter-clear-box-' + rId);
+          if (clearBox) clearBox.style.display = 'none';
+          const copyWrap = document.getElementById('filter-copy-wrap-' + rId);
+          if (copyWrap) copyWrap.style.display = 'none';
+        });
+        clearSelection();
+      } else {
+        showToast('❌ ' + (d.error || 'Hata'), 'err');
+      }
+    } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+    return;
+  }
+
   const url = action === 'pause' ? '/accounts/bulk-pause' : '/accounts/bulk-resume';
   try {
     const res = await fetch(url, {
@@ -819,6 +873,37 @@ async function bulkRuleAction(action) {
     return;
   }
 
+  if (action === 'clear_filters') {
+    if (!confirm(`Seçili ${ids.length} kurala ait tüm filtreleri temizlemek istediğinize emin misiniz?\n(Kurallarınız silinmez, sadece içlerindeki filtreler sıfırlanır.)`)) return;
+    try {
+      const res = await fetch('/rules/bulk-clear-filters', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rule_ids: ids})
+      });
+      const d = await res.json();
+      if (d.ok) {
+        showToast(`🧹 ${d.deleted_count} filtre temizlendi`, 'warn');
+        (d.rule_ids || []).forEach(rId => {
+          const list = document.getElementById('filter-list-' + rId);
+          if (list) list.innerHTML = '';
+          const cnt = document.getElementById('filter-count-' + rId);
+          if (cnt) cnt.textContent = '0 filtre';
+          const qBtn = document.getElementById('btn-quick-clear-' + rId);
+          if (qBtn) qBtn.style.display = 'none';
+          const clearBox = document.getElementById('filter-clear-box-' + rId);
+          if (clearBox) clearBox.style.display = 'none';
+          const copyWrap = document.getElementById('filter-copy-wrap-' + rId);
+          if (copyWrap) copyWrap.style.display = 'none';
+        });
+        clearRuleSelection();
+      } else {
+        showToast('❌ ' + (d.error || 'Filtre temizleme hatası'), 'err');
+      }
+    } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+    return;
+  }
+
   try {
     const res = await fetch('/rules/bulk-toggle', {
       method: 'POST',
@@ -833,6 +918,172 @@ async function bulkRuleAction(action) {
       showToast('❌ ' + (d.error || 'Hata'), 'err');
     }
   } catch(e) { showToast('❌ Sunucu hatası', 'err'); }
+}
+
+// ── AJAX FİLTRE İŞLEMLERİ ──
+async function addFilterAjax(e, ruleId) {
+  if (e) e.preventDefault();
+  const searchInput = document.getElementById('filter-search-' + ruleId);
+  const replaceInput = document.getElementById('filter-replace-' + ruleId);
+  const addBtn = document.getElementById('btn-add-filter-' + ruleId);
+
+  const searchWord = searchInput ? searchInput.value.trim() : '';
+  const replaceWord = replaceInput ? replaceInput.value.trim() : '';
+
+  if (!searchWord) {
+    showToast('Lütfen filtrelenecek kelimeyi girin', 'err');
+    return;
+  }
+
+  if (addBtn) addBtn.disabled = true;
+
+  try {
+    const formData = new FormData();
+    formData.append('search_word', searchWord);
+    formData.append('replace_word', replaceWord);
+
+    const res = await fetch(`/rules/${ruleId}/filters`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: formData
+    });
+
+    const d = await res.json();
+    if (d.ok && d.filter) {
+      showToast(`✅ Filtre eklendi: "${searchWord}"`, 'ok');
+      if (searchInput) searchInput.value = '';
+      if (replaceInput) replaceInput.value = '';
+
+      const list = document.getElementById('filter-list-' + ruleId);
+      if (list) {
+        const item = document.createElement('div');
+        item.className = 'flex items-center gap-2 mb-1 filter-row-item';
+        item.id = 'filter-item-' + d.filter.id;
+        item.style.fontSize = '.75rem';
+
+        const codeSearch = document.createElement('code');
+        codeSearch.style.cssText = 'background:var(--surface2);padding:.1rem .4rem;border-radius:4px';
+        codeSearch.textContent = d.filter.search_word;
+
+        const arrow = document.createElement('span');
+        arrow.className = 'text-muted';
+        arrow.textContent = '→';
+
+        item.appendChild(codeSearch);
+        item.appendChild(arrow);
+
+        if (d.filter.replace_word) {
+          const codeReplace = document.createElement('code');
+          codeReplace.style.cssText = 'background:var(--surface2);padding:.1rem .4rem;border-radius:4px;color:#a5b4fc';
+          codeReplace.textContent = d.filter.replace_word;
+          item.appendChild(codeReplace);
+        } else {
+          const spanBlock = document.createElement('span');
+          spanBlock.style.cssText = 'background:rgba(239,68,68,.18);color:#f87171;border:1px solid rgba(239,68,68,.35);padding:.1rem .4rem;border-radius:4px;font-weight:700';
+          spanBlock.textContent = '🚫 Mesajı Engelle';
+          item.appendChild(spanBlock);
+        }
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-danger';
+        delBtn.style.cssText = 'margin-left:auto;padding:.15rem .4rem;font-size:.7rem;border-radius:4px;border:none;cursor:pointer';
+        delBtn.textContent = '✕';
+        delBtn.onclick = () => deleteFilterAjax(d.filter.id, ruleId);
+        item.appendChild(delBtn);
+
+        list.appendChild(item);
+      }
+
+      const cnt = document.getElementById('filter-count-' + ruleId);
+      if (cnt) cnt.textContent = d.total_filters + ' filtre';
+
+      const qBtn = document.getElementById('btn-quick-clear-' + ruleId);
+      if (qBtn) qBtn.style.display = 'inline-block';
+
+      const clearBox = document.getElementById('filter-clear-box-' + ruleId);
+      if (clearBox) clearBox.style.display = 'block';
+
+      const copyWrap = document.getElementById('filter-copy-wrap-' + ruleId);
+      if (copyWrap) copyWrap.style.display = 'block';
+
+    } else {
+      showToast('❌ ' + (d.error || 'Filtre eklenemedi'), 'err');
+    }
+  } catch(e) {
+    showToast('❌ Sunucu hatası', 'err');
+  } finally {
+    if (addBtn) addBtn.disabled = false;
+  }
+}
+
+async function deleteFilterAjax(filterId, ruleId) {
+  try {
+    const res = await fetch(`/filters/${filterId}/delete`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    const d = await res.json();
+    if (d.ok) {
+      showToast('🗑️ Filtre silindi', 'warn');
+      const item = document.getElementById('filter-item-' + filterId);
+      if (item) item.remove();
+
+      const cnt = document.getElementById('filter-count-' + ruleId);
+      if (cnt) cnt.textContent = d.total_filters + ' filtre';
+
+      if (d.total_filters === 0) {
+        const qBtn = document.getElementById('btn-quick-clear-' + ruleId);
+        if (qBtn) qBtn.style.display = 'none';
+        const clearBox = document.getElementById('filter-clear-box-' + ruleId);
+        if (clearBox) clearBox.style.display = 'none';
+        const copyWrap = document.getElementById('filter-copy-wrap-' + ruleId);
+        if (copyWrap) copyWrap.style.display = 'none';
+      }
+    } else {
+      showToast('❌ ' + (d.error || 'Silme hatası'), 'err');
+    }
+  } catch(e) {
+    showToast('❌ Sunucu hatası', 'err');
+  }
+}
+
+async function clearSingleRuleFilters(ruleId) {
+  if (!confirm('Bu kuraldaki tüm filtreleri temizlemek istediğinize emin misiniz?\n(Kural silinmeyecek, sadece filtreleri sıfırlanacak.)')) return;
+  try {
+    const res = await fetch(`/rules/${ruleId}/filters/clear`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    const d = await res.json();
+    if (d.ok) {
+      showToast(`🧹 ${d.deleted_count} filtre temizlendi`, 'warn');
+      const list = document.getElementById('filter-list-' + ruleId);
+      if (list) list.innerHTML = '';
+      const cnt = document.getElementById('filter-count-' + ruleId);
+      if (cnt) cnt.textContent = '0 filtre';
+      const qBtn = document.getElementById('btn-quick-clear-' + ruleId);
+      if (qBtn) qBtn.style.display = 'none';
+      const clearBox = document.getElementById('filter-clear-box-' + ruleId);
+      if (clearBox) clearBox.style.display = 'none';
+      const copyWrap = document.getElementById('filter-copy-wrap-' + ruleId);
+      if (copyWrap) copyWrap.style.display = 'none';
+    } else {
+      showToast('❌ ' + (d.error || 'Temizleme hatası'), 'err');
+    }
+  } catch(e) {
+    showToast('❌ Sunucu hatası', 'err');
+  }
 }
 
 // ── FİLTRE KOPYALAMA ──
